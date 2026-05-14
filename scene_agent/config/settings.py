@@ -14,14 +14,14 @@ import os
 # This points to the Podman AI Lab OpenAI-compatible API endpoint.
 MODEL_BASE_URL = os.getenv(
     "MODEL_BASE_URL",
-    "http://localhost:52546/v1",
+    "http://localhost:61451/v1",
 )
 
 # Exact model ID returned by:
 # curl http://localhost:52546/v1/models
 MODEL_NAME = os.getenv(
     "MODEL_NAME",
-    "/models/hf.ibm-research.granite-3.2-8b-instruct-GGUF",
+    "ibm-research/granite-3.2-8b-instruct-GGUF",
 )
 
 
@@ -42,4 +42,4 @@ GODOT_PROJECT_PATH = os.getenv(
 
 
 # LLM request timeout
-LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "60"))
+LLM_TIMEOUT_SECONDS = int(os.getenv("LLM_TIMEOUT_SECONDS", "180"))

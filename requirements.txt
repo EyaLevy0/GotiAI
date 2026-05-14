@@ -2,3 +2,6 @@ pydantic
 langchain-core
 requests
 python-dotenv
+beautifulsoup4
+fastapi
+uvicorn
