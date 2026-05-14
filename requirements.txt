@@ -1,0 +1,4 @@
+pydantic
+langchain-core
+requests
+python-dotenv
