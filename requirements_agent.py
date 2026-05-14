@@ -274,6 +274,13 @@ st.markdown("""
   [data-testid="stSidebar"]               { display: none !important; }
   [data-testid="stSidebarCollapsedControl"]{ display: none !important; }
 
+  /* Left column — stick to top */
+  [data-testid="stHorizontalBlock"] > [data-testid="column"]:first-child {
+      align-self: flex-start !important;
+      position: sticky !important;
+      top: 1rem !important;
+  }
+
   /* Left panel column — glassmorphism */
   .left-panel {
       background: rgba(6, 4, 22, 0.7);
@@ -281,8 +288,6 @@ st.markdown("""
       border-right: 1px solid rgba(123,47,255,0.2);
       border-radius: 16px;
       padding: 1.4rem 1.2rem;
-      height: 100%;
-      min-height: 80vh;
   }
 
   /* Sidebar brand */
