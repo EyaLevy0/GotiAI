@@ -22,8 +22,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # LangChain + MCP imports
-from langchain.chat_models import ChatOpenAI
-from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain.agents import create_agent
+from langchain_openai import ChatOpenAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from mcp import StdioServerParameters
 
@@ -149,20 +149,14 @@ async def run_agent(project_path: str) -> None:
         # Create the LLM. This example uses ChatOpenAI configured as requested.
         llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
-        # Create a tool-calling agent. `create_tool_calling_agent` constructs
-        # an agent specialization that uses the supplied system prompt and
-        # tools. Different LangChain versions may accept slightly different
-        # parameter names; this call follows the commonly available signature.
-        agent = create_tool_calling_agent(llm=llm, tools=tools, system_message=SYSTEM_PROMPT)
-
-        # Wrap the agent with an AgentExecutor to run it. Prefer async run
-        # methods when available.
-        executor = AgentExecutor.from_agent_and_tools(agent=agent, tools=tools, verbose=True)
+        # Create a LangChain agent graph. In this LangChain version, `create_agent`
+        # returns a compiled state graph that accepts a `messages` payload and
+        # supports async invocation.
+        agent = create_agent(model=llm, tools=tools, system_prompt=SYSTEM_PROMPT)
 
         # Execute the agent with an explicit instruction to perform the
-        # compile-first ReAct loop defined by the system prompt. Prefer
-        # async executor methods when available.
-        async def run_react_loop(executor_obj, project_path_str: str):
+        # compile-first ReAct loop defined in the system prompt.
+        async def run_react_loop(agent_obj, project_path_str: str):
             instruction = (
                 "Execute the STRICT compile-first ReAct loop exactly as the system "
                 "prompt dictates. The project path is provided below. Follow the "
@@ -171,15 +165,22 @@ async def run_agent(project_path: str) -> None:
                 f"PROJECT_PATH: {project_path}\n"
             )
 
-            if hasattr(executor_obj, "arun"):
-                return await executor_obj.arun(instruction)
-            if hasattr(executor_obj, "aexecute"):
-                return await executor_obj.aexecute(instruction)
+            input_state = {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": instruction,
+                    }
+                ]
+            }
+
+            if hasattr(agent_obj, "ainvoke"):
+                return await agent_obj.ainvoke(input_state)
 
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(None, executor_obj.run, instruction)
+            return await loop.run_in_executor(None, agent_obj.invoke, input_state)
 
-        result = await run_react_loop(executor, project_path)
+        result = await run_react_loop(agent, project_path)
         print("AGENT_RESULT:\n", result)
 
     finally:
