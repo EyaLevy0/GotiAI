@@ -2,3 +2,7 @@ pydantic
 langchain-core
 requests
 python-dotenv
+langchain-groq
+langchain-google-genai
+langchain-ollama
+streamlit

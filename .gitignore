@@ -1,1 +1,22 @@
 .venv
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Generated contract output (runtime)
+agent_data/
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# OS
+.DS_Store
+Thumbs.db
