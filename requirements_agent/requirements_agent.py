@@ -591,139 +591,81 @@ with right_col:
     else:
         prompt_to_process = st.chat_input("Write your answer...")
 
-    def _build_force_message(n_fields: int) -> str:
-        """Return the enrichment instruction injected before the save call.
-
-        Args:
-            n_fields: Number of active fields collected.
-
-        Returns:
-            A prompt string instructing the LLM to expand all fields and call save_contracts.
-        """
-        return (
-            f"You now have answers for all {n_fields} required fields. "
-            "Call save_contracts NOW. For EVERY field, write rich expanded Godot specs — "
-            "do NOT copy the user's words verbatim. Expand into full technical detail:\n"
-            "• game_mechanic: Camera2D mode + smoothing, gravity px/s², world width px, "
-            "HUD elements with screen positions, win/lose conditions, level structure\n"
-            "• enemy_interaction: collision shape + exact px size, damage amount + type, "
-            "knockback force, patrol range px, aggro radius px, defeat method, score, drops\n"
-            "• character_abilities: walk px/s, run px/s, jump_velocity px/s, max jump height px, "
-            "all animation states with frame counts (idle:4f run:8f jump:3f fall:2f hurt:2f death:4f), "
-            "coyote_time ms, jump_buffer ms, special ability cooldowns\n"
-            "• main_character: sprite size px, full color palette with 4-5 hex codes and roles, "
-            "spritesheet layout, shader effects, particle effects\n"
-            "• All visual fields: sprite sizes, hex palettes, frame counts, animations\n"
-            "For any field the user did NOT answer — invent smart, coherent defaults. "
-            "Every field must be 4-6 sentences of dense detail. No empty strings."
-        )
-
     def process_message(prompt: str):
-        """Handle one complete user turn: extract, route, then stream or save.
-
-        Args:
-            prompt: The raw text the user submitted.
-        """
+        """Handle one complete user turn: stream response, handle tool calls."""
         st.session_state.chat_history.append({"role": "user", "content": prompt})
         st.session_state.lc_messages.append(HumanMessage(content=prompt))
 
-        # Run LangGraph: extract fields from this message and determine phase.
-        updated_state = get_graph().invoke({
-            **st.session_state.graph_state,
-            "latest_user_message": prompt,
-        })
-        st.session_state.graph_state = updated_state
-        should_save = updated_state.get("phase") == "saving"
+        # Run graph extraction silently to keep the stepper/progress up to date.
+        try:
+            updated_state = get_graph().invoke({
+                **st.session_state.graph_state,
+                "latest_user_message": prompt,
+            })
+            st.session_state.graph_state = updated_state
+        except Exception:
+            pass  # stepper stays as-is; conversation continues normally
 
         messages_to_send = list(st.session_state.lc_messages)
-        if should_save:
-            messages_to_send.append(HumanMessage(content=_build_force_message(total_active)))
 
-        response        = None
-        raw_content     = ""
+        # Always stream — the LLM decides when to call save_contracts.
+        streamed_response = None
+        raw_content = ""
         display_content = ""
 
-        if should_save:
+        try:
             with stream_container:
                 with st.chat_message("assistant", avatar=_ICON_IMAGE):
                     placeholder = st.empty()
                     placeholder.markdown(
                         '<span style="color:rgba(255,255,255,0.35);font-style:italic">'
-                        'Saving your game spec<span class="dots">...</span></span>',
+                        'Thinking<span class="dots">...</span></span>',
                         unsafe_allow_html=True,
                     )
-                    for attempt in range(3):
-                        try:
-                            response = invoke_with_backoff(messages_to_send, with_tools=True)
-                        except Exception as exc:
-                            st.error(f"LLM error: {exc}")
-                            return
-                        if response.tool_calls:
-                            break
-                        messages_to_send = list(st.session_state.lc_messages) + [
-                            HumanMessage(content=(
-                                "URGENT: Call save_contracts tool NOW. "
-                                "All information has been collected. No more questions. Tool call only."
-                            ))
-                        ]
-                    if not response.tool_calls:
-                        st.error("Could not trigger save — please type 'save' to retry.")
-                        return
-        else:
-            streamed_response = None
-            try:
-                with stream_container:
-                    with st.chat_message("assistant", avatar=_ICON_IMAGE):
-                        placeholder = st.empty()
-                        placeholder.markdown(
-                            '<span style="color:rgba(255,255,255,0.35);font-style:italic">'
-                            'Thinking<span class="dots">...</span></span>',
-                            unsafe_allow_html=True,
-                        )
-                        for chunk in stream_with_backoff(messages_to_send):
-                            if streamed_response is None:
-                                streamed_response = chunk
-                            else:
-                                streamed_response = streamed_response + chunk
-                            if chunk.content:
-                                raw_content += chunk.content
-                                placeholder.markdown(raw_content.strip() + " ▌")
+                    for chunk in stream_with_backoff(messages_to_send):
+                        if streamed_response is None:
+                            streamed_response = chunk
+                        else:
+                            streamed_response = streamed_response + chunk
+                        if chunk.content:
+                            raw_content += chunk.content
+                            placeholder.markdown(raw_content.strip() + " ▌")
 
-                        display_content = raw_content.strip()
-                        placeholder.markdown(display_content if display_content else "")
+                    display_content = raw_content.strip()
+                    placeholder.markdown(display_content if display_content else "")
 
-            except Exception as exc:
-                st.error(f"LLM error: {exc}")
-                return
+        except Exception as exc:
+            st.error(f"LLM error: {exc}")
+            return
 
-            response = streamed_response
-
+        response = streamed_response
         if response is None:
             return
 
         st.session_state.lc_messages.append(response)
 
-        # Guard: block premature saves if the graph phase changed between turns.
-        if response.tool_calls and not should_save:
-            block_msg = HumanMessage(content=(
-                "You called save_contracts too early. "
-                "Keep the conversation going and ask about the next missing field."
-            ))
-            st.session_state.lc_messages.append(block_msg)
-            try:
-                redirect = invoke_with_backoff(st.session_state.lc_messages, with_tools=False)
-            except Exception as exc:
-                st.error(f"LLM error: {exc}")
-                return
-            st.session_state.lc_messages.append(redirect)
-            if redirect.content:
-                st.session_state.chat_history.append({"role": "assistant", "content": redirect.content})
-            st.rerun()
-            return
+        user_turns = sum(1 for m in st.session_state.chat_history if m["role"] == "user")
 
         if response.tool_calls:
             for tool_call in response.tool_calls:
                 if tool_call["name"] == "save_contracts":
+                    if user_turns < 4:
+                        block_msg = HumanMessage(content=(
+                            f"You tried to save after only {user_turns} user answer(s). "
+                            "You must ask about all 4 required fields first: "
+                            "game mechanic, enemy interaction, character abilities, main character look. "
+                            "Keep asking — do NOT call save_contracts yet."
+                        ))
+                        st.session_state.lc_messages.append(block_msg)
+                        try:
+                            redirect = invoke_with_backoff(st.session_state.lc_messages, with_tools=False)
+                            st.session_state.lc_messages.append(redirect)
+                            if redirect.content:
+                                st.session_state.chat_history.append({"role": "assistant", "content": redirect.content})
+                        except Exception:
+                            pass
+                        st.rerun()
+                        return
                     try:
                         result = save_contracts.invoke(tool_call["args"])
                     except Exception as exc:

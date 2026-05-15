@@ -1,21 +1,28 @@
 # Local LLM client. This file will handle communication with the AI model running locally through Podman AI Lab.
 """
-Local LLM client for the Scene Agent.
+LLM client for the Scene Agent.
 
-This file is responsible for sending prompts to a local AI model.
-The model can run through Podman AI Lab, LM Studio, Ollama, or any
-OpenAI-compatible local server.
+Uses Groq (cloud) when GROQ_API_KEY is set, otherwise falls back to a
+local OpenAI-compatible server (Podman AI Lab / Ollama).
 """
 
+import os
 from typing import Optional
 
 import requests
+from dotenv import load_dotenv
 
 from scene_agent.config.settings import (
     MODEL_BASE_URL,
     MODEL_NAME,
     LLM_TIMEOUT_SECONDS,
 )
+
+load_dotenv()
+
+_GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+_GROQ_MODEL = "llama-3.1-8b-instant"
 
 
 def ask_llm(
@@ -24,81 +31,50 @@ def ask_llm(
     temperature: float = 0.7,
     max_tokens: int = 1000,
 ) -> str:
-    """
-    Send a prompt to the local LLM and return the generated response text.
+    """Send a prompt to the LLM and return the generated response text.
 
-    Args:
-        prompt: The user/task prompt to send to the model.
-        system_prompt: Optional system-level instruction for the model.
-        temperature: Controls randomness. Higher means more creative.
-        max_tokens: Maximum number of tokens to generate.
-
-    Returns:
-        The text response from the model.
-
-    Raises:
-        RuntimeError: If the local model server fails or returns an invalid response.
+    Prefers Groq when GROQ_API_KEY is present; falls back to the local server.
     """
 
     messages = []
-
     if system_prompt:
-        messages.append(
-            {
-                "role": "system",
-                "content": system_prompt,
-            }
-        )
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
 
-    messages.append(
-        {
-            "role": "user",
-            "content": prompt,
+    if _GROQ_API_KEY:
+        base_url = _GROQ_BASE_URL
+        model = _GROQ_MODEL
+        headers = {
+            "Authorization": f"Bearer {_GROQ_API_KEY}",
+            "Content-Type": "application/json",
         }
-    )
+        print(f"[scene_agent] Using Groq ({model})")
+    else:
+        base_url = MODEL_BASE_URL
+        model = MODEL_NAME
+        headers = {"Content-Type": "application/json"}
+        print(f"[scene_agent] Using local LLM at {base_url} ({model})")
 
     payload = {
-        "model": MODEL_NAME,
+        "model": model,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
         "stream": False,
     }
 
-    url = f"{MODEL_BASE_URL}/chat/completions"
+    url = f"{base_url}/chat/completions"
 
     try:
-        print(f"\n[DEBUG] Sending LLM request...")
-        print(f"[DEBUG] URL: {url}")
-        print(f"[DEBUG] Model: {MODEL_NAME}")
-        print(
-            f"[DEBUG] System prompt length: {len(system_prompt) if system_prompt else 0} chars"
-        )
-        print(f"[DEBUG] User prompt length: {len(prompt)} chars")
-        print(f"[DEBUG] Max tokens: {max_tokens}, Temperature: {temperature}")
-
-        response = requests.post(
-            url,
-            json=payload,
-            timeout=LLM_TIMEOUT_SECONDS,
-        )
-        print(f"[DEBUG] Response status: {response.status_code}")
-
+        response = requests.post(url, json=payload, headers=headers, timeout=LLM_TIMEOUT_SECONDS)
         response.raise_for_status()
-
-        data = response.json()
-        result = data["choices"][0]["message"]["content"]
-        print(f"[DEBUG] Response length: {len(result)} chars")
-        print(f"[DEBUG] First 200 chars: {result[:200]}...\n")
-        return result
+        return response.json()["choices"][0]["message"]["content"]
 
     except requests.RequestException as error:
-        raise RuntimeError(f"Failed to connect to local LLM server: {error}") from error
+        raise RuntimeError(f"LLM request failed: {error}") from error
 
     except (KeyError, IndexError, TypeError) as error:
-        raise RuntimeError(
-            f"Invalid response format from local LLM: {error}"
-        ) from error
+        raise RuntimeError(f"Invalid LLM response format: {error}") from error
 
 
 def ask_llm_mock(prompt: str) -> str:
