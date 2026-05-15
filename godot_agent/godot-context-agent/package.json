@@ -1,0 +1,103 @@
+{
+  "name": "godot-context-agent",
+  "displayName": "Godot Context Agent",
+  "description": "Enhances GitHub Copilot with Godot 4.x documentation and project-aware context retrieval. Does not generate code itself.",
+  "version": "0.1.0",
+  "publisher": "godot-tools",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": ["AI", "Other"],
+  "keywords": ["godot", "gdscript", "copilot", "context", "ai"],
+  "type": "module",
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:gdscript",
+    "workspaceContains:project.godot"
+  ],
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "godot-context-agent.godot",
+        "name": "godot",
+        "fullName": "Godot Context Agent",
+        "description": "Godot 4.x-aware context retrieval for Copilot",
+        "isSticky": true,
+        "commands": [
+          { "name": "docs",     "description": "Look up Godot 4.x API documentation" },
+          { "name": "scan",     "description": "Force a fresh workspace re-index" },
+          { "name": "template", "description": "Insert a Godot 4.x boilerplate template" },
+          { "name": "explain",  "description": "Explain a Godot symbol using docs + workspace usage" }
+        ]
+      }
+    ],
+    "commands": [
+      { "command": "godotContext.reindex",         "title": "Godot Context: Re-index Workspace",  "category": "Godot" },
+      { "command": "godotContext.openSidebar",     "title": "Godot Context: Open Sidebar",        "category": "Godot" },
+      { "command": "godotContext.searchApi",       "title": "Godot Context: Search API",          "category": "Godot" },
+      { "command": "godotContext.generateScript",  "title": "Godot Context: Generate Script…",    "category": "Godot" }
+    ],
+    "views": {
+      "godot-context-agent": [
+        {
+          "type": "webview",
+          "id": "godotContext.sidebar",
+          "name": "Godot Context",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "godot-context-agent",
+          "title": "Godot Context",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Godot Context Agent",
+      "properties": {
+        "godotContext.godotVersion": {
+          "type": "string",
+          "default": "4.x",
+          "enum": ["4.x", "4.0", "4.1", "4.2", "4.3", "4.4"],
+          "description": "Godot version to target. Filters API surface and deprecation warnings."
+        },
+        "godotContext.maxContextTokens": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 500,
+          "maximum": 8000,
+          "description": "Maximum tokens included in the context block handed to Copilot."
+        },
+        "godotContext.workspaceFileLimit": {
+          "type": "number",
+          "default": 200,
+          "description": "Maximum .gd files to index in a single pass."
+        },
+        "godotContext.warnOnGodot3Api": {
+          "type": "boolean",
+          "default": true,
+          "description": "Warn when retrieved snippets reference Godot 3 APIs (KinematicBody, etc.)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build":      "tsc -p . && npm run copy-assets",
+    "watch":      "tsc -p . --watch",
+    "copy-assets":"node -e \"const fs=require('fs'),p=require('path');const s='src/ui/webview',d='dist/ui/webview';fs.mkdirSync(d,{recursive:true});for(const f of fs.readdirSync(s)){if(!f.endsWith('.ts'))fs.copyFileSync(p.join(s,f),p.join(d,f));}\"",
+    "build:index":"tsx scripts/build-api-index.ts",
+    "package":    "vsce package",
+    "lint":       "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node":   "^20.11.0",
+    "@types/vscode": "^1.90.0",
+    "tsx":           "^4.7.0",
+    "typescript":    "^5.4.0"
+  }
+}

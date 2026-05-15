@@ -1,0 +1,189 @@
+/* Sidebar styling. The aesthetic: restrained dev-tool, single accent.
+   Godot's brand blue (#478CBF) is the one chromatic moment; everything
+   else follows the host VS Code theme via CSS vars so we look native in
+   both light and dark themes. No purple-gradient AI slop. */
+
+:root {
+  --accent: #478CBF;            /* Godot signature blue */
+  --accent-soft: rgba(71, 140, 191, 0.12);
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans: var(--vscode-font-family);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--vscode-foreground);
+  background: var(--vscode-sideBar-background);
+  padding: 8px 10px 16px;
+}
+
+code, pre, input { font-family: var(--mono); }
+
+.panel-header {
+  display: flex; align-items: center; gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+.panel-header h1 {
+  margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.4px;
+  flex: 1;
+}
+.dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+#reindex {
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 3px;
+  width: 22px; height: 22px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+#reindex:hover { border-color: var(--accent); color: var(--accent); }
+
+.stats {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 12px 0;
+}
+.stat {
+  display: flex; flex-direction: column; align-items: center;
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  padding: 8px 4px;
+}
+.stat .num {
+  font-family: var(--mono);
+  font-size: 18px; font-weight: 600;
+  color: var(--accent);
+  line-height: 1.1;
+}
+.stat .label {
+  font-size: 10px; opacity: 0.7;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+.version { font-size: 11px; opacity: 0.8; margin-bottom: 12px; }
+.version code { background: var(--accent-soft); padding: 1px 5px; border-radius: 2px; color: var(--accent); }
+
+.preview { margin-top: 14px; }
+.preview label {
+  display: block; font-size: 11px; opacity: 0.7;
+  margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+#query {
+  width: 100%;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  border-radius: 3px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+#query:focus { outline: none; border-color: var(--accent); }
+
+.meta {
+  display: flex; align-items: center; gap: 8px;
+  margin: 6px 0;
+  font-size: 10px;
+  opacity: 0.7;
+}
+.budget {
+  flex: 1; height: 3px;
+  background: var(--vscode-panel-border);
+  border-radius: 2px; overflow: hidden;
+}
+.budget .fill {
+  display: block; height: 100%;
+  background: var(--accent);
+  width: 0%; transition: width 0.18s ease;
+}
+
+.preview-out {
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 4px;
+  padding: 8px;
+  max-height: 50vh; overflow: auto;
+  white-space: pre-wrap; word-wrap: break-word;
+  font-size: 11px; line-height: 1.5;
+  margin: 0;
+}
+
+.autoloads { margin-top: 18px; }
+.autoloads h2 {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+  opacity: 0.7; margin: 0 0 6px;
+  font-weight: 600;
+}
+#autoloads-list {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 3px;
+}
+#autoloads-list li {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 11px;
+  padding: 3px 6px;
+  border-left: 2px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 3px 3px 0;
+}
+#autoloads-list li .path {
+  opacity: 0.6; font-size: 10px;
+}
+
+.api-browser { margin-top: 18px; }
+.api-browser h2 {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+  opacity: 0.7; margin: 0 0 6px;
+  font-weight: 600;
+}
+#api-query {
+  width: 100%;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  border-radius: 3px;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-family: var(--mono);
+  margin-bottom: 6px;
+}
+#api-query:focus { outline: none; border-color: var(--accent); }
+#api-results {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 2px;
+  max-height: 30vh; overflow-y: auto;
+}
+#api-results li {
+  padding: 4px 6px;
+  cursor: pointer;
+  border-radius: 2px;
+  border-left: 2px solid transparent;
+}
+#api-results li:hover {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+#api-results .api-name {
+  font-family: var(--mono); font-size: 11px;
+  color: var(--accent); font-weight: 500;
+}
+#api-results .api-inherits {
+  font-family: var(--mono); font-size: 10px;
+  opacity: 0.55; margin-left: 6px;
+}
+#api-results .api-brief {
+  font-size: 10px; opacity: 0.75;
+  margin-top: 2px; line-height: 1.35;
+}

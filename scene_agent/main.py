@@ -13,6 +13,10 @@ from scene_agent.models.scene_request import RequestManagerContract
 from scene_agent.pipeline import run_scene_creator_pipeline
 
 
+# everything here is hardcoded, need to be changed in the future.
+# what this class does is basically make something called contract,
+# a contract looks a lot like a prompt, it has all the information the agent needs to know to generate the scene,
+# the contract is then sent to the pipeline, which runs the agent and generates the files.
 def build_demo_contract(argv: list[str]) -> RequestManagerContract:
     """
     Build a demo contract from command-line arguments.
@@ -21,11 +25,7 @@ def build_demo_contract(argv: list[str]) -> RequestManagerContract:
     """
 
     # First argument can override the local Godot project directory.
-    project_directory_path = (
-        argv[0]
-        if len(argv) >= 1
-        else "C:/test/GodotProject"
-    )
+    project_directory_path = argv[0] if len(argv) >= 1 else "C:/test/GodotProject"
 
     # Remaining arguments can override the main game mechanic.
     game_mechanic = (
@@ -37,9 +37,7 @@ def build_demo_contract(argv: list[str]) -> RequestManagerContract:
     return RequestManagerContract(
         project_directory_path=project_directory_path,
         game_mechanic=game_mechanic,
-        enemy_interaction=(
-            "Player takes damage on touch, enemies die if jumped on."
-        ),
+        enemy_interaction=("Player takes damage on touch, enemies die if jumped on."),
         start_screen_instructions=(
             "Create a simple start screen with a title and a Start button."
         ),

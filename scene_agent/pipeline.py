@@ -46,9 +46,7 @@ class ScenePipelineResult(BaseModel):
     """
 
     # Indicates whether the pipeline finished successfully.
-    status: str = Field(
-        description="Pipeline result status, for example: success."
-    )
+    status: str = Field(description="Pipeline result status, for example: success.")
 
     # Structured analysis created by the SceneAnalyzerTool.
     analysis: SceneAnalysisResult = Field(

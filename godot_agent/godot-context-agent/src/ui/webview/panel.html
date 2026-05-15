@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src __CSP_SOURCE__ 'unsafe-inline'; script-src 'nonce-__NONCE__'; img-src __CSP_SOURCE__ data:;" />
+  <link rel="stylesheet" href="__CSS_URI__" />
+  <title>Godot Context</title>
+</head>
+<body>
+  <header class="panel-header">
+    <span class="dot"></span>
+    <h1>Godot Context</h1>
+    <button id="reindex" title="Re-scan workspace" aria-label="Re-scan workspace">↻</button>
+  </header>
+
+  <section class="stats" aria-label="Index stats">
+    <div class="stat"><span class="num" id="stat-scripts">—</span><span class="label">scripts</span></div>
+    <div class="stat"><span class="num" id="stat-scenes">—</span><span class="label">scenes</span></div>
+    <div class="stat"><span class="num" id="stat-autoloads">—</span><span class="label">autoloads</span></div>
+  </section>
+
+  <section class="version">
+    Engine: <code id="engine-version">unknown</code>
+  </section>
+
+  <section class="preview">
+    <label for="query">Preview the context Copilot would receive:</label>
+    <input id="query" type="text" placeholder="e.g. enemy AI with raycast" />
+    <div class="meta">
+      <span id="token-count">0 tokens</span>
+      <span class="budget" id="budget-bar"><span class="fill" id="budget-fill"></span></span>
+    </div>
+    <pre id="preview-out" class="preview-out">Type a query above.</pre>
+  </section>
+
+  <section class="autoloads" id="autoloads-section">
+    <h2>Autoloads</h2>
+    <ul id="autoloads-list"></ul>
+  </section>
+
+  <section class="api-browser">
+    <h2>Godot API browser</h2>
+    <input id="api-query" type="text" placeholder="Search classes, methods, signals…" />
+    <ul id="api-results"></ul>
+  </section>
+
+  <script nonce="__NONCE__" src="__JS_URI__"></script>
+</body>
+</html>
