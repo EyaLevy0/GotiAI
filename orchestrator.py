@@ -25,7 +25,7 @@ class WorkflowState(TypedDict, total=False):
 	project_path: str
 	assets_injected: bool
 	status: str
-
+	asset_instructions: str
 
 def _default_project_path() -> str:
 	"""Resolve a usable project path for the manager placeholder.
