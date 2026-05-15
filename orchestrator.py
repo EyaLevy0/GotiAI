@@ -4,7 +4,7 @@ This module builds a LangGraph state machine that wires together the team
 roles A1-A4:
   A1 (manager)  – reads the contracts produced by the requirements_agent UI
   A2 (scene)    – calls the scene_agent to generate GDScript from the contract
-  A3 (sprite)   – placeholder (sprite agent not yet implemented)
+  A3 (sprite)   – injects asset kit into the Godot project via sprite_agent
   A4 (tester)   – compiles the project and iteratively fixes errors
 """
 
@@ -16,6 +16,7 @@ from typing import Optional, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from sprite_agent.main import run_agent as run_sprite_agent
 from tester_agent.main import run_agent as run_tester_agent
 
 
@@ -27,10 +28,12 @@ class WorkflowState(TypedDict, total=False):
 	"""Shared workflow state passed between LangGraph nodes."""
 
 	user_prompt: str
+	selected_kit: str
 	project_path: str
 	request_contract: dict
 	sprite_contract: dict
 	scene_output: str
+	assets_injected: bool
 	status: str
 
 
@@ -82,6 +85,26 @@ async def a1_manager(state: WorkflowState) -> WorkflowState:
 
 
 # ---------------------------------------------------------------------------
+# A3 – Sprite: inject asset kit via sprite_agent
+# ---------------------------------------------------------------------------
+
+async def a3_sprite(state: WorkflowState) -> WorkflowState:
+	"""Sprite node that delegates to the real Sprite Agent (A3).
+
+	This agent injects the selected asset kit into the Godot project and
+	returns an updated state that downstream nodes can consume.
+	"""
+
+	updated_state = await run_sprite_agent(state)
+	return {
+		**state,
+		**updated_state,
+		"assets_injected": bool(updated_state.get("assets_injected", False)),
+		"status": updated_state.get("status", "A3_sprite_completed"),
+	}
+
+
+# ---------------------------------------------------------------------------
 # A2 – Scene: generate GDScript via the scene_agent
 # ---------------------------------------------------------------------------
 
@@ -108,11 +131,7 @@ def _build_scene_request(contract: dict) -> str:
 
 
 async def a2_scene(state: WorkflowState) -> WorkflowState:
-	"""Call the scene_agent to generate GDScript from the request contract.
-
-	Imports are deferred so the orchestrator can be imported even if the
-	scene_agent optional dependencies are not installed.
-	"""
+	"""Call the scene_agent to generate GDScript from the request contract."""
 
 	from scene_agent.tools.godot_docs_tool import retrieve_godot_docs_context
 	from scene_agent.main import SYSTEM_PROMPT, build_user_prompt
@@ -139,23 +158,6 @@ async def a2_scene(state: WorkflowState) -> WorkflowState:
 
 
 # ---------------------------------------------------------------------------
-# A3 – Sprite: placeholder (sprite agent not yet implemented)
-# ---------------------------------------------------------------------------
-
-async def a3_sprite(state: WorkflowState) -> WorkflowState:
-	"""Placeholder sprite node.
-
-	TODO: implement once the sprite_agent module is available.
-	The sprite_contract in state already contains the structured data needed.
-	"""
-
-	return {
-		**state,
-		"status": "A3_sprite_completed",
-	}
-
-
-# ---------------------------------------------------------------------------
 # A4 – Tester: compile + fix loop
 # ---------------------------------------------------------------------------
 
@@ -175,7 +177,7 @@ async def a4_tester(state: WorkflowState) -> WorkflowState:
 # ---------------------------------------------------------------------------
 
 def _build_graph() -> StateGraph:
-	"""Create and wire the LangGraph workflow: START → A1 → A2 → A3 → A4 → END."""
+	"""Create and wire the LangGraph workflow: START → A1 → A3 → A2 → A4 → END."""
 
 	graph: StateGraph = StateGraph(WorkflowState)
 	graph.add_node("A1", a1_manager)
@@ -184,9 +186,9 @@ def _build_graph() -> StateGraph:
 	graph.add_node("A4", a4_tester)
 
 	graph.add_edge(START, "A1")
-	graph.add_edge("A1", "A2")
-	graph.add_edge("A2", "A3")
-	graph.add_edge("A3", "A4")
+	graph.add_edge("A1", "A3")
+	graph.add_edge("A3", "A2")
+	graph.add_edge("A2", "A4")
 	graph.add_edge("A4", END)
 	return graph
 
@@ -196,12 +198,7 @@ def _build_graph() -> StateGraph:
 # ---------------------------------------------------------------------------
 
 async def trigger_godot_generation(user_prompt: str) -> dict:
-	"""Run the full orchestration graph for a user request.
-
-	Designed for FastAPI / frontend routes. Compiles the graph, seeds the
-	initial state with the user prompt, runs the workflow, and returns the
-	final state dictionary.
-	"""
+	"""Run the full orchestration graph for a user request."""
 
 	graph = _build_graph().compile()
 	initial_state: WorkflowState = {"user_prompt": user_prompt}
