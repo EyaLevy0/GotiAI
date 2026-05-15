@@ -1,4 +1,6 @@
 pydantic
+pillow
+langgraph
 langchain-core
 requests
 python-dotenv
