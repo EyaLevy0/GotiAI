@@ -39,8 +39,12 @@ def to_contract(
         world_background=str(art_obj.get("world_background", "")),
         tileset_environment=str(art_obj.get("tileset_environment", "")),
     )
+    # TEMPORARY: hardcode project path to Windows game folder for testing.
+    # This uses the WSL mount path so the WSL-based generator writes to
+    # the Windows location: C:\Users\yarde\Documents\new-game-project-1
+    project_root = Path("/mnt/c/Users/yarde/Documents/new-game-project-1").resolve()
     return RequestManagerContract(
-        project_directory_path=str(Path(project_directory_path).resolve()),
+        project_directory_path=str(project_root),
         art=art,
         mechanics=mechanics,
         sprite_injection=SpriteInjectionContract(),

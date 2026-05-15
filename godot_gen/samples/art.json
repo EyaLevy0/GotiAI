@@ -1,7 +1,7 @@
 {
-  "base_art_style": "pixel art, 32x32 tiles",
-  "main_character": "fox with red scarf",
-  "enemies": ["slime", "bat"],
-  "world_background": "parallax forest",
-  "tileset_environment": "mossy stone"
+  "base_art_style": "detailed pixel art, 32x32 tiles, layered shading, subtle animation-ready poses",
+  "main_character": "fox explorer with red scarf, satchel, and glowing amulet",
+  "enemies": ["slime", "bat", "armored beetle", "forest spirit"],
+  "world_background": "parallax forest with ruins, glowing fireflies, and distant mountains",
+  "tileset_environment": "mossy stone, cracked roots, vines, and ancient temple blocks"
 }

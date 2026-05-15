@@ -1,5 +1,6 @@
 {
-  "game_mechanic": "2D side-scroller moving right like Mario",
-  "enemy_interaction": "Player takes damage on touch, enemies die if jumped on.",
-  "character_abilities": ["run", "jump"]
+  "game_mechanic": "2D side-scroller with movement to the right, light exploration, collectables, and branching platform routes",
+  "enemy_interaction": "Player takes damage on touch, enemies can be stomped, and some enemies require a dash or projectile to defeat.",
+  "character_abilities": ["run", "jump", "double jump", "dash"],
+  "start_screen_instructions": "Press Enter to begin, use arrows or WASD to move, jump with Space, and dash with Shift."
 }
