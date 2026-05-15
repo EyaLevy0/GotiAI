@@ -1,8 +1,8 @@
 """Main backend orchestrator for the Godot generation workflow.
 
 This module builds a LangGraph state machine that wires together the team
-roles A1-A4. The current implementation keeps A1-A3 as placeholders and
-integrates the working tester agent as A4.
+roles A1-A4. A1 is a manager placeholder, A2 is the real Creator Agent,
+A3 is the real Sprite Agent, and A4 is the Tester Agent.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from creator_agent.main import run_coder_agent
 from sprite_agent.main import run_agent as run_sprite_agent
 from tester_agent.main import run_agent as run_tester_agent
 
@@ -21,11 +22,14 @@ class WorkflowState(TypedDict, total=False):
 	"""Shared workflow state passed between LangGraph nodes."""
 
 	user_prompt: str
+	game_design_doc: str
 	selected_kit: str
 	project_path: str
 	assets_injected: bool
-	status: str
+	code_saved: bool
+	generated_code: str
 	asset_instructions: str
+	status: str
 
 def _default_project_path() -> str:
 	"""Resolve a usable project path for the manager placeholder.
@@ -38,31 +42,49 @@ def _default_project_path() -> str:
 	return os.getenv("GODOT_PROJECT_PATH", str(Path.cwd()))
 
 
+def _default_selected_kit() -> str:
+	"""Resolve a usable default kit for the sprite injector."""
+
+	return os.getenv("GODOT_SELECTED_KIT", "platformer")
+
+
 # TODO: Import actual functions from teammates
 async def a1_manager(state: WorkflowState) -> WorkflowState:
 	"""Placeholder manager node.
 
-	Initializes the project path and marks the workflow as routed through A1.
+	Initializes the project path, selected kit, and game design summary.
 	"""
 
 	return {
 		**state,
 		"project_path": state.get("project_path") or _default_project_path(),
+		"selected_kit": state.get("selected_kit") or _default_selected_kit(),
+		"game_design_doc": state.get("game_design_doc") or state.get("user_prompt", ""),
 		"status": "A1_manager_completed",
 	}
 
 
 # TODO: Import actual functions from teammates
-async def a2_scene(state: WorkflowState) -> WorkflowState:
-	"""Placeholder scene node.
+async def a2_coder(state: WorkflowState) -> WorkflowState:
+	"""Creator node that delegates to the real Creator Agent (A2).
 
-	This currently simulates scene orchestration work and preserves the
-	project path for downstream nodes.
+	The coder agent consumes the design doc and asset instructions to generate
+	Godot GDScript files.
 	"""
 
+	asset_instructions = state.get("asset_instructions") or (
+		f"Use sprites from the {state.get('selected_kit', 'platformer')} kit in assets/."
+	)
+	updated_state = await run_coder_agent({
+		**state,
+		"game_design_doc": state.get("game_design_doc") or state.get("user_prompt", ""),
+		"asset_instructions": asset_instructions,
+	})
 	return {
 		**state,
-		"status": "A2_scene_completed",
+		**updated_state,
+		"code_saved": bool(updated_state.get("code_saved", False)),
+		"status": updated_state.get("status", "A2_coder_completed"),
 	}
 
 
@@ -106,7 +128,7 @@ def _build_graph() -> StateGraph[WorkflowState]:
 
 	graph = StateGraph(WorkflowState)
 	graph.add_node("A1", a1_manager)
-	graph.add_node("A2", a2_scene)
+	graph.add_node("A2", a2_coder)
 	graph.add_node("A3", a3_sprite)
 	graph.add_node("A4", a4_tester)
 
