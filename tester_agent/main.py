@@ -146,7 +146,11 @@ async def run_agent(project_path: str) -> None:
 
         tools.extend(_collect_local_tools())
 
-        # Create the LLM. This example uses ChatOpenAI configured as requested.
+        # Create the LLM. This example uses ChatOpenAI.
+        # To use an OpenRouter API key, set `OPENAI_API_KEY` to your OpenRouter
+        # key and `OPENAI_API_BASE` to `https://api.openrouter.ai/v1` in your
+        # .env file. ChatOpenAI will pick up those environment variables and
+        # route requests through OpenRouter without further code changes.
         llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
         # Create a LangChain agent graph. In this LangChain version, `create_agent`

@@ -7,7 +7,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 
 from creator_agent.prompts import SYSTEM_PROMPT
@@ -32,7 +32,10 @@ async def run_coder_agent(state: dict) -> dict:
 			asset_instructions = f"Use sprites from the {selected_kit} kit in assets/."
 
 	load_dotenv()
-	llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0)
+	# If you have an OpenRouter API key, set OPENAI_API_KEY to that key and
+	# OPENAI_API_BASE to https://api.openrouter.ai/v1 in your .env. Then
+	# use ChatOpenAI which will send requests through the OpenRouter endpoint.
+	llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 	agent = create_react_agent(
 		model=llm,
 		tools=[write_gdscript],
