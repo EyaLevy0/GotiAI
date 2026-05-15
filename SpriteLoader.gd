@@ -2,7 +2,7 @@ class_name SpriteLoader
 extends RefCounted
 
 # Load a simple PNG into a Sprite2D.
-static func load_texture(sprite_node: Sprite2D, image_name: str) -> void:
+static func load_texture(sprite_node: Sprite2D, image_name: String) -> void:
 	var path = "res://assets/" + image_name
 	if ResourceLoader.exists(path):
 		sprite_node.texture = load(path)

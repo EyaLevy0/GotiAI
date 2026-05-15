@@ -117,7 +117,9 @@ async def run_agent(project_path: str) -> None:
     5. Executes the agent with the `project_path` input
     6. Ensures the MCP client is shut down in `finally`
     """
-    load_dotenv()
+    # Load the repository root .env to ensure shared API keys are used.
+    repo_root = Path(__file__).resolve().parents[1]
+    load_dotenv(dotenv_path=repo_root / ".env")
 
     # Resolve the MCP server command. We intentionally use `npx` to ensure the
     # MCP server can be launched without a prior install step.
