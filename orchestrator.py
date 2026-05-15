@@ -13,6 +13,7 @@ from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from sprite_agent.main import run_agent as run_sprite_agent
 from tester_agent.main import run_agent as run_tester_agent
 
 
@@ -20,7 +21,9 @@ class WorkflowState(TypedDict, total=False):
 	"""Shared workflow state passed between LangGraph nodes."""
 
 	user_prompt: str
+	selected_kit: str
 	project_path: str
+	assets_injected: bool
 	status: str
 
 
@@ -63,17 +66,19 @@ async def a2_scene(state: WorkflowState) -> WorkflowState:
 	}
 
 
-# TODO: Import actual functions from teammates
 async def a3_sprite(state: WorkflowState) -> WorkflowState:
-	"""Placeholder sprite node.
+	"""Sprite node that delegates to the real Sprite Agent (A3).
 
-	This currently simulates sprite orchestration work and preserves the
-	project path for downstream nodes.
+	This agent injects the selected asset kit into the Godot project and
+	returns an updated state that downstream nodes can consume.
 	"""
 
+	updated_state = await run_sprite_agent(state)
 	return {
 		**state,
-		"status": "A3_sprite_completed",
+		**updated_state,
+		"assets_injected": bool(updated_state.get("assets_injected", False)),
+		"status": updated_state.get("status", "A3_sprite_completed"),
 	}
 
 
@@ -106,9 +111,9 @@ def _build_graph() -> StateGraph[WorkflowState]:
 	graph.add_node("A4", a4_tester)
 
 	graph.add_edge(START, "A1")
-	graph.add_edge("A1", "A2")
-	graph.add_edge("A2", "A3")
-	graph.add_edge("A3", "A4")
+	graph.add_edge("A1", "A3")
+	graph.add_edge("A3", "A2")
+	graph.add_edge("A2", "A4")
 	graph.add_edge("A4", END)
 	return graph
 
