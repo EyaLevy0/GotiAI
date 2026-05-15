@@ -22,7 +22,7 @@ class WorkflowState(TypedDict, total=False):
 	user_prompt: str
 	project_path: str
 	status: str
-
+	asset_instructions: str
 
 def _default_project_path() -> str:
 	"""Resolve a usable project path for the manager placeholder.
