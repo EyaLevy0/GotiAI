@@ -15,16 +15,17 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import sys
 from typing import Iterable
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 # LangChain + MCP imports
 from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from mcp import StdioServerParameters
 
 # Local tools & prompts
 from tester_agent import tools as local_tools
@@ -32,26 +33,57 @@ from tester_agent.prompts import SYSTEM_PROMPT
 
 
 async def _start_mcp_client(command: list[str]) -> MultiServerMCPClient:
-    """Start and return a MultiServerMCPClient connected to the Godot MCP server."""
+    """Start and return a MultiServerMCPClient connected to the given command.
+
+    The function attempts to use the asynchronous context manager API when
+    available; otherwise it falls back to explicit start/stop methods if
+    provided by the client implementation. The returned client must be
+    closed/stopped by the caller (see `run_agent` cleanup code).
+    """
     client = MultiServerMCPClient(
-        {
-            "godot": {
-                "command": command[0],
-                "args": command[1:],
-                "transport": "stdio",
-            }
-        }
+        server_commands=[command], server_parameters=StdioServerParameters()
     )
+
+    # Prefer async context manager style if the client supports it. We still
+    # return the client object to the caller so they can explicitly stop it.
+    if hasattr(client, "__aenter__"):
+        # Use __aenter__ to ensure the client has started properly
+        await client.__aenter__()  # type: ignore[arg-type]
+        return client
+
+    # Fallback: try a start() coroutine
+    if hasattr(client, "start"):
+        start_coro = getattr(client, "start")
+        if asyncio.iscoroutinefunction(start_coro):
+            await start_coro()  # type: ignore[arg-type]
+            return client
+
+    # If no well-known start mechanism is available, return the client and
+    # let the caller attempt operations which may raise clear errors.
     return client
 
 
 async def _stop_mcp_client(client: MultiServerMCPClient) -> None:
-    """Stop/close the MCP client (best-effort)."""
+    """Stop/close the MCP client, handling multiple adapter APIs."""
     try:
         if hasattr(client, "__aexit__"):
-            await client.__aexit__(None, None, None)
+            await client.__aexit__(None, None, None)  # type: ignore[arg-type]
+            return
+
+        if hasattr(client, "stop"):
+            stop_coro = getattr(client, "stop")
+            if asyncio.iscoroutinefunction(stop_coro):
+                await stop_coro()  # type: ignore[arg-type]
+                return
+
+        if hasattr(client, "close"):
+            close_coro = getattr(client, "close")
+            if asyncio.iscoroutinefunction(close_coro):
+                await close_coro()  # type: ignore[arg-type]
+                return
     except Exception:
-        pass
+        # Best-effort cleanup; do not raise on shutdown
+        return
 
 
 def _collect_local_tools() -> list:
@@ -113,11 +145,14 @@ async def run_agent(project_path: str) -> None:
                 pass
 
         tools.extend(_collect_local_tools())
-        llm = ChatOpenAI(
-        model="openai/gpt-4o-mini",  
-        api_key=os.getenv("OPENROUTER_API_KEY"),
-        base_url="https://openrouter.ai/api/v1",
-        temperature=0)
+
+        # Create the LLM. This example uses ChatOpenAI.
+        # To use an OpenRouter API key, set `OPENAI_API_KEY` to your OpenRouter
+        # key and `OPENAI_API_BASE` to `https://api.openrouter.ai/v1` in your
+        # .env file. ChatOpenAI will pick up those environment variables and
+        # route requests through OpenRouter without further code changes.
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
         # Create a LangChain agent graph. In this LangChain version, `create_agent`
         # returns a compiled state graph that accepts a `messages` payload and
         # supports async invocation.
