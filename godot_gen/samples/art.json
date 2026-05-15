@@ -1,0 +1,7 @@
+{
+  "base_art_style": "2D pixel art, 16-bit retro aesthetic, limited 32-color palette, no anti-aliasing, integer-scaled pixels, soft warm lighting, slight outline on foreground sprites.",
+  "main_character": "Sprite canvas size: 32x48 pixels. Origin at bottom-center. Required animations: idle (4 frames, 6 fps), walk (8 frames, 10 fps), run (8 frames, 14 fps), jump (2 frames, hold last), fall (2 frames, hold last), hurt (3 frames, 8 fps, non-looping), interact (4 frames, 10 fps, non-looping). Outline 1px, deep navy. Default facing: right.",
+  "enemies": [],
+  "world_background": "Number of parallax layers: 3. Back layer: distant mountains at 0.2x scroll. Mid layer: forest silhouette at 0.5x scroll. Near layer: foreground grass tufts at 1.0x scroll. Vertical scroll factor 0.1 for all layers. Each layer is a tiled 320x180 px texture.",
+  "tileset_environment": "Tile size: 32x32 pixels. Tileset includes: solid ground, grass-topped ground, stone platform, wooden platform (one-way collision), spike hazard, ladder, sliding-door frame, rotating-platform base, spring base. Auto-tile rules for ground variants (corners, edges, inner)."
+}

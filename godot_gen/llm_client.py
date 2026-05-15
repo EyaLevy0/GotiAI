@@ -41,15 +41,21 @@ class LLMClient:
             ],
             "max_tokens": max_tokens,
             "temperature": SETTINGS.temperature if temperature is None else temperature,
+            "stream": False,  # explicit — never rely on server default
         }
         if json_mode:
-            # Many local servers honor this; harmless if ignored.
             payload["response_format"] = {"type": "json_object"}
 
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",
         }
+
+        print(f"[llm] --> {self.base_url}/chat/completions")
+        print(
+            f"[llm]     model={payload['model']}  max_tokens={max_tokens}  stream=False"
+        )
+
         resp = self._client.post(
             f"{self.base_url}/chat/completions",
             headers=headers,
@@ -57,7 +63,13 @@ class LLMClient:
         )
         resp.raise_for_status()
         data = resp.json()
-        return data["choices"][0]["message"]["content"]
+
+        if "error" in data:
+            raise RuntimeError(f"[llm] server error: {data['error']}")
+
+        content = data["choices"][0]["message"]["content"]
+        print(f"[llm] <-- response received ({len(content)} chars)")
+        return content
 
     def close(self) -> None:
         self._client.close()

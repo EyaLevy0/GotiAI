@@ -40,7 +40,8 @@ def to_contract(
         tileset_environment=str(art_obj.get("tileset_environment", "")),
     )
     return RequestManagerContract(
-        project_directory_path=str(Path(project_directory_path).resolve()),
+        ##project_directory_path=str(Path(project_directory_path).resolve()),
+        project_directory_path=r"C:\Users\yarde\Documents\new-game-project-1",
         art=art,
         mechanics=mechanics,
         sprite_injection=SpriteInjectionContract(),

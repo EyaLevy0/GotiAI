@@ -1,0 +1,18 @@
+{
+  "game_mechanic": "2D side-scrolling platformer with physics-driven movement and interactive level mechanisms. Gravity: 980 px/s². Player uses CharacterBody2D with move_and_slide(). World mechanisms include: Sliding Door (translates 64 pixels along its local axis when interacted with, duration 0.4s, ease-out); Rotating Platform (CharacterBody2D set to rotation mode, angular velocity 45 deg/s, reversible by switch); Spring (Area2D detector that overrides player.velocity.y to -750 on body_entered, with 0.1s cooldown). Camera2D follows the player horizontally with smoothing enabled (smoothing_speed 5.0), zoom Vector2(1.0, 1.0). Collision layer 1 = world, layer 2 = player, layer 3 = interactables.",
+  "enemy_interaction": "No enemies in this scene. All hazards are environmental (spikes, pits, moving platforms). On contact with a hazard Area2D, the player is reset to the last checkpoint position via a 'hurt' animation and a 0.5s input lock.",
+  "start_screen_instructions": "Title: 'Untitled Platformer'. Subtitle: 'Press any key to start'. Controls panel shows: A/D or Left/Right to move, Space to jump, E to interact with mechanisms. Title font size 48, body font size 20, centered on a CanvasLayer. Pressing any key transitions to the Main scene.",
+  "character_abilities": [
+    "Walk speed: 180 px/s",
+    "Run speed: 300 px/s (hold Shift)",
+    "Acceleration: 1500 px/s²",
+    "Deceleration / ground friction: 1800 px/s²",
+    "Air control acceleration: 800 px/s²",
+    "Jump velocity: -420 px/s",
+    "Variable jump height: releasing Space before apex cuts upward velocity by 50%",
+    "Coyote time: 0.1 s after leaving a ledge",
+    "Jump buffer: 0.12 s before landing",
+    "Max fall speed: 900 px/s",
+    "Interact range: 28 px in front of the player (Area2D), triggered with E"
+  ]
+}

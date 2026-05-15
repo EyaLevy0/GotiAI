@@ -1,11 +1,4 @@
-"""Top-level pipeline. Bypasses godot_docs_tool.py entirely.
-
-Flow:
-  RequestManagerContract
-    → SceneAnalyzerTool.plan(...)         (LLM #1)
-    → CodeWriterTool.write(...) per file  (LLM #2 only for .gd)
-    → FileManagerTool.write(...)
-"""
+"""Top-level pipeline. Bypasses godot_docs_tool.py entirely."""
 
 from __future__ import annotations
 
@@ -35,13 +28,17 @@ class Pipeline:
     def run(self, contract: RequestManagerContract) -> PipelineResult:
         fm = FileManagerTool(contract.project_directory_path)
 
-        # Step 1: plan
+        print("[pipeline] starting scene analysis ...")
         plan = self.analyzer.plan(contract)
+        print(f"[pipeline] plan ready — {len(plan.files)} files:")
+        for f in plan.files:
+            print(f"  {f.kind.value:14s}  {f.path}")
 
-        # Step 2: write each file in dependency order
         written_paths: List[Path] = []
         summaries: List[str] = []
-        for item in plan.files:
+
+        for i, item in enumerate(plan.files, 1):
+            print(f"\n[pipeline] ({i}/{len(plan.files)}) writing: {item.path}")
             content = self.writer.write(
                 contract=contract,
                 plan=item,
@@ -51,5 +48,6 @@ class Pipeline:
             path = fm.write(item.path, content)
             written_paths.append(path)
             summaries.append(f"{item.path} ({item.kind.value}): {item.purpose}")
+            print(f"[pipeline] wrote -> {path}")
 
         return PipelineResult(plan=plan, written_paths=written_paths)
