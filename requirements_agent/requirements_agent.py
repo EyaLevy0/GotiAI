@@ -662,11 +662,10 @@ def _derive_game_name(request_contract: dict) -> str:
     return " ".join(words).title() if words else "My Game"
 
 
-def _open_godot_editor(project_path: str) -> int:
-    """Launch the Godot editor (non-blocking) with the given project.
+def _launch_godot_game(project_path: str) -> int:
+    """Launch Godot in run mode (plays the project) and return the pid.
 
-    Returns the launched process pid. Raises ``FileNotFoundError`` if the
-    configured ``GODOT_EXECUTABLE`` does not exist on disk.
+    Raises ``FileNotFoundError`` if ``GODOT_EXECUTABLE`` does not exist.
     """
     import subprocess
     import os as _os
@@ -674,11 +673,62 @@ def _open_godot_editor(project_path: str) -> int:
     if godot_exe != "godot" and not Path(godot_exe).exists():
         raise FileNotFoundError(f"GODOT_EXECUTABLE not found: {godot_exe}")
     proc = subprocess.Popen(
-        [godot_exe, "--path", project_path, "--editor"],
+        [godot_exe, "--path", project_path],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
     return proc.pid
+
+
+def _kill_godot_holding_project(project_path: str) -> list[int]:
+    """Terminate any Godot process whose cmdline references *project_path*.
+
+    Returns the list of killed pids. Silently returns an empty list when
+    ``psutil`` isn't installed.
+    """
+    killed: list[int] = []
+    try:
+        import psutil  # type: ignore
+    except ImportError:
+        return killed
+
+    target = str(Path(project_path)).lower().replace("\\", "/")
+    for proc in psutil.process_iter(["name", "cmdline"]):
+        try:
+            name = (proc.info.get("name") or "").lower()
+            if not name.startswith("godot"):
+                continue
+            cmd = " ".join(proc.info.get("cmdline") or []).lower().replace("\\", "/")
+            if target in cmd:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except psutil.TimeoutExpired:
+                    proc.kill()
+                killed.append(proc.pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return killed
+
+
+def _best_effort_wipe(project_root: Path) -> list[str]:
+    """Best-effort removal of regeneratable files. Returns skipped paths."""
+    import shutil
+    skipped: list[str] = []
+    if not project_root.exists():
+        return skipped
+
+    for child in project_root.iterdir():
+        try:
+            if child.is_dir():
+                if child.name in (".godot",):
+                    continue  # leave Godot's import cache to speed things up
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+        except Exception:
+            skipped.append(str(child.relative_to(project_root)))
+    return skipped
 
 
 def _run_pipeline() -> None:
@@ -687,8 +737,14 @@ def _run_pipeline() -> None:
     import os as _os
     import shutil
     import sys
+    import time
     import traceback
     sys.path.insert(0, str(Path(__file__).parent.parent))
+
+    def _log(msg: str) -> None:
+        # Mirror every step to the terminal so the user can confirm progress
+        # even if Streamlit's UI doesn't flush the inner status writes.
+        print(f"[pipeline] {msg}", flush=True)
 
     request_contract = st.session_state.get("request_contract_data") or {}
     sprite_contract  = st.session_state.get("sprite_contract_data") or {}
@@ -699,71 +755,109 @@ def _run_pipeline() -> None:
         project_root = Path(__file__).parent.parent / "game_project"
     project_path_str = str(project_root)
 
-    with st.status("Generating your Godot game…", expanded=True) as status:
+    progress = st.empty()
+    log_lines: list[str] = []
+
+    def _ui(line: str) -> None:
+        log_lines.append(line)
+        progress.markdown(
+            "### Generating your Godot game…\n\n" + "\n\n".join(log_lines)
+        )
+        _log(line.replace("**", "").replace("`", ""))
+        # Yield so Streamlit actually flushes the markdown before the next
+        # blocking step. Without this, asyncio.run swallows every prior write.
+        time.sleep(0.05)
+
+    try:
+        _ui(f"🧹 Cleaning previous project at `{project_path_str}`…")
+        killed = _kill_godot_holding_project(project_path_str)
+        if killed:
+            _ui(f"   ✓ Closed prior Godot process(es): {killed}")
+        skipped = _best_effort_wipe(project_root)
+        if skipped:
+            _ui(f"   ⚠️ Could not refresh {len(skipped)} locked file(s); using overwrite path: {skipped[:5]}")
+        else:
+            _ui("   ✓ Removed previous project")
+
+        _ui("📁 Creating fresh Godot project (project.godot, main.tscn, input map, icon)…")
+        _create_godot_project(project_root, game_name)
+        _os.environ["GODOT_PROJECT_PATH"] = project_path_str
+        _ui("   ✓ Base project created")
+
         try:
-            status.write(f"🧹 Cleaning previous project at `{project_path_str}`…")
-            if project_root.exists():
-                try:
-                    shutil.rmtree(project_root)
-                    status.write(f"  ✓ Removed `{project_path_str}`")
-                except Exception as exc:
-                    status.write(
-                        f"  ⚠️ Could not fully clean `{project_path_str}` — "
-                        f"close Godot if it has the project open.\n\n`{exc}`"
-                    )
-                    status.update(label="❌ Could not clean previous project", state="error")
-                    return
+            from orchestrator import trigger_godot_generation
+        except ImportError as exc:
+            _ui(f"❌ Could not import orchestrator: `{exc}`")
+            st.error("Pipeline failed.")
+            return
 
-            status.write("📁 Creating fresh Godot project (project.godot, main.tscn, input map, icon)…")
-            _create_godot_project(project_root, game_name)
-            _os.environ["GODOT_PROJECT_PATH"] = project_path_str
+        rc = request_contract or {}
+        sc = sprite_contract or {}
+        user_prompt = (
+            f"Game: {game_name}\n"
+            f"Mechanic: {rc.get('game_mechanic', '')}\n"
+            f"Enemy interaction: {rc.get('enemy_interaction', '')}\n"
+            f"Player abilities: {rc.get('character_abilities', '')}\n"
+            f"Start screen: {rc.get('start_screen_instructions', '')}\n"
+            f"Main character: {sc.get('main_character', '')}\n"
+            f"Enemies: {sc.get('enemies', '')}\n"
+            f"World background: {sc.get('world_background', '')}\n"
+            f"Tileset: {sc.get('tileset_environment', '')}\n"
+            f"Main menu background: {sc.get('main_menu_background', '')}\n"
+            f"Project path: {project_path_str}\n"
+        )
 
-            try:
-                from orchestrator import trigger_godot_generation
-            except ImportError as exc:
-                status.write(f"❌ Could not import orchestrator: `{exc}`")
-                status.update(label="❌ Import error", state="error")
-                return
-
-            rc = request_contract or {}
-            sc = sprite_contract or {}
-            user_prompt = (
-                f"Game: {game_name}\n"
-                f"Mechanic: {rc.get('game_mechanic', '')}\n"
-                f"Enemy interaction: {rc.get('enemy_interaction', '')}\n"
-                f"Player abilities: {rc.get('character_abilities', '')}\n"
-                f"Start screen: {rc.get('start_screen_instructions', '')}\n"
-                f"Main character: {sc.get('main_character', '')}\n"
-                f"Enemies: {sc.get('enemies', '')}\n"
-                f"World background: {sc.get('world_background', '')}\n"
-                f"Tileset: {sc.get('tileset_environment', '')}\n"
-                f"Main menu background: {sc.get('main_menu_background', '')}\n"
-                f"Project path: {project_path_str}\n"
-            )
-
-            status.write("⚙️ Running pipeline: A1 → A3 (sprites) → A2 (code) → A4 (test)…")
-            status.write("_LLM steps may take 30–90 seconds. Spinner keeps running._")
+        _ui("⚙️ Running pipeline: A1 → A3 (sprites) → A2 (LLM writes code, ~60s) → A4 (test)…")
+        _ui("_The LLM step is the slowest. Watch the terminal window for live progress._")
+        t0 = time.time()
+        with st.spinner("Agents are working… (30–120 seconds)"):
             result = asyncio.run(trigger_godot_generation(user_prompt=user_prompt))
-            pipeline_status = (
-                result.get("status", "unknown") if isinstance(result, dict) else "completed"
+        elapsed = time.time() - t0
+        pipeline_status = (
+            result.get("status", "unknown") if isinstance(result, dict) else "completed"
+        )
+        _ui(f"   ✓ Pipeline finished in {elapsed:.1f}s (status: `{pipeline_status}`)")
+
+        compile_result = (
+            result.get("compile_result", "") if isinstance(result, dict) else ""
+        )
+        if compile_result and "GODOT_COMPILER_ERRORS" in compile_result:
+            _ui("   ⚠️ Godot reported compile issues — opening anyway so you can inspect.")
+        elif compile_result:
+            _ui("   ✓ Godot compiled the project successfully")
+
+        _ui("🚀 Launching Godot (running the project)…")
+        try:
+            pid = _launch_godot_game(project_path_str)
+            _ui(f"   ✓ Godot launched (pid={pid})")
+        except FileNotFoundError as exc:
+            _ui(f"❌ {exc}")
+            st.error(
+                "Set `GODOT_EXECUTABLE` in `.env` to the full path of your Godot 4 binary "
+                "(e.g. `C:/Godot/godot.exe`)."
             )
-            status.write(f"  ✓ Pipeline finished (status: `{pipeline_status}`)")
-
-            status.write("🚀 Launching Godot editor…")
-            pid = _open_godot_editor(project_path_str)
-            status.write(f"  ✓ Godot launched (pid={pid})")
-
-            status.update(label=f"✅ {game_name} is ready — Godot is opening", state="complete")
-
-            if isinstance(result, dict) and result.get("generated_code"):
-                with st.expander("🎬 Generated GDScript (truncated)", expanded=False):
-                    st.code(str(result["generated_code"])[:3000], language="gdscript")
-            st.info(f"📁 Project: `{project_path_str}`")
-
+            return
         except Exception as exc:
-            status.write(f"❌ **Pipeline failed:** `{exc}`")
-            status.write("```\n" + traceback.format_exc() + "\n```")
-            status.update(label="❌ Pipeline failed", state="error")
+            _ui(f"❌ Could not launch Godot: `{exc}`")
+            st.error(traceback.format_exc())
+            return
+
+        st.success(
+            f"✅ **{game_name}** is ready. Godot is opening — switch to it (Alt+Tab) "
+            f"and press **F5** to play.\n\n📁 `{project_path_str}`"
+        )
+
+        if isinstance(result, dict) and result.get("generated_code"):
+            with st.expander("🎬 Generated GDScript (truncated)", expanded=False):
+                st.code(str(result["generated_code"])[:3000], language="gdscript")
+        if compile_result:
+            with st.expander("🧪 Godot compiler output", expanded=False):
+                st.code(compile_result[:3000], language="text")
+
+    except Exception as exc:
+        _log(f"FATAL: {exc}")
+        st.error(f"Pipeline failed: {exc}")
+        st.code(traceback.format_exc())
 
 
 # ── Right panel ──────────────────────────────────────────────────────────────

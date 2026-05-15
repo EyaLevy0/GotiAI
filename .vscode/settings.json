@@ -1,0 +1,8 @@
+{
+  "python.defaultInterpreterPath": "C:/Users/roeec/AppData/Local/Programs/Python/Python310/python.exe",
+  "python.analysis.extraPaths": [
+    ".",
+    "./requirements_agent"
+  ],
+  "python.analysis.typeCheckingMode": "basic"
+}

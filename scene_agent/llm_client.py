@@ -18,7 +18,7 @@ from scene_agent.config.settings import (
     LLM_TIMEOUT_SECONDS,
 )
 
-load_dotenv()
+load_dotenv(override=True)
 
 _GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 _GROQ_BASE_URL = "https://api.groq.com/openai/v1"
