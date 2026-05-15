@@ -39,6 +39,7 @@ async def run_agent(state: dict) -> dict:
             "assets_injected": False,
             "status": "A3_sprite_missing_input",
             "error": "Missing selected_kit or project_path in state.",
+            "asset_instructions": ""
         }
 
     agent = _build_agent()
@@ -61,4 +62,11 @@ async def run_agent(state: dict) -> dict:
         "assets_injected": True,
         "status": "A3_sprite_completed",
         "sprite_agent_result": result,
+        "asset_instructions": (
+            "CRITICAL TECHNICAL INSTRUCTIONS FROM ASSET MANAGER:\n"
+            "Assets and animations are ready in 'res://assets/'.\n"
+            "DO NOT load or create .tres files.\n"
+            "To load a static image: SpriteLoader.load_texture($SpriteNode, 'image.png')\n"
+            "To load animations: SpriteLoader.setup_animations($AnimatedSpriteNode, 'character_folder')"
+        )
     }
