@@ -1,6 +1,6 @@
-# GotiAI: Autonomous Godot 4 Game Generation
+# GotiAI: Autonomous Multi AI-Agents Godot 4 Game Generation
 
-![GotiAI System Overview](Screenshot%202026-05-14%20224349.png)
+<img src="flow-graph.jpeg" width="700" alt="GotiAI flow graph">
 
 ## 🚀 The Vision
 GotiAI is a multi-agent orchestration framework designed to transform natural language prompts into fully functional, playable Godot 4 games. Built during a high-stakes hackathon, our goal was to bridge the "Dev Void" between creative intent and technical implementation in the Godot Engine.
