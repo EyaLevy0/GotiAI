@@ -1,26 +1,19 @@
-"""Async MCP-enabled agent runner for the Tester Agent.
-
-This module starts an async event loop, connects to a Godot MCP server (via
-`npx -y @coding-solo/godot-mcp@latest`), collects MCP-provided tools, combines
-them with local tools implemented in `tester_agent.tools`, constructs a
-tool-calling agent using `ChatOpenAI`, and runs the agent executor against a
-`project_path` input.
-
-The implementation is defensive and includes fallbacks for small API
-variations across LangChain / MCP adapter versions. It documents assumptions
-and performs graceful cleanup of the MCP client.
-"""
+"""Tester Agent (A4) — compiles the Godot project directly, no LLM/MCP needed."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import sys
-from typing import Iterable
 from pathlib import Path
 
 from dotenv import load_dotenv
 
+from tester_agent.tools import run_godot_compiler
+
+
+async def run_agent(project_path: str) -> None:
+    """Run Godot compiler headlessly and print the result."""
+    load_dotenv(override=True)
 # LangChain + MCP imports
 from langchain.agents import create_agent
 from langchain_openai import ChatOpenAI
@@ -121,103 +114,19 @@ async def run_agent(project_path: str) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     load_dotenv(dotenv_path=repo_root / ".env")
 
-    # Resolve the MCP server command. We intentionally use `npx` to ensure the
-    # MCP server can be launched without a prior install step.
-    mcp_command = ["npx", "-y", "@coding-solo/godot-mcp@latest"]
-
-    client: MultiServerMCPClient | None = None
-    try:
-        # Start the MCP client and obtain MCP-provided tools.
-        client = await _start_mcp_client(mcp_command)
-
-        # `get_tools` is typically an async method returning a list of Tool
-        # objects that can be passed to LangChain agents. Use runtime-safe
-        # checks to support slight API variations.
-        if hasattr(client, "get_tools"):
-            get_tools_fn = getattr(client, "get_tools")
-            mcp_tools = await get_tools_fn()
-        else:
-            mcp_tools = []
-
-        # Combine MCP tools with the local tools implemented in this package.
-        tools: list = []
-        if isinstance(mcp_tools, list):
-            tools.extend(mcp_tools)
-        else:
-            # If an object (single toolkit) is returned, try to iterate
-            try:
-                tools.extend(list(mcp_tools))
-            except Exception:
-                pass
-
-        tools.extend(_collect_local_tools())
-
-        # Create the LLM. This example uses ChatOpenAI.
-        # To use an OpenRouter API key, set `OPENAI_API_KEY` to your OpenRouter
-        # key and `OPENAI_API_BASE` to `https://api.openrouter.ai/v1` in your
-        # .env file. ChatOpenAI will pick up those environment variables and
-        # route requests through OpenRouter without further code changes.
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-
-        # Create a LangChain agent graph. In this LangChain version, `create_agent`
-        # returns a compiled state graph that accepts a `messages` payload and
-        # supports async invocation.
-        agent = create_agent(model=llm, tools=tools, system_prompt=SYSTEM_PROMPT)
-
-        # Execute the agent with an explicit instruction to perform the
-        # compile-first ReAct loop defined in the system prompt.
-        async def run_react_loop(agent_obj, project_path_str: str):
-            instruction = (
-                "Execute the STRICT compile-first ReAct loop exactly as the system "
-                "prompt dictates. The project path is provided below. Follow the "
-                "CALL TOOL / TOOL RESULT reporting format and stop only on SUCCESS "
-                "or after 5 iterations.\n\n"
-                f"PROJECT_PATH: {project_path}\n"
-            )
-
-            input_state = {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": instruction,
-                    }
-                ]
-            }
-
-            if hasattr(agent_obj, "ainvoke"):
-                return await agent_obj.ainvoke(input_state)
-
-            loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(None, agent_obj.invoke, input_state)
-
-        result = await run_react_loop(agent, project_path)
-        print("AGENT_RESULT:\n", result)
-
-    finally:
-        # Ensure the MCP client is shut down even if the agent raised.
-        if client is not None:
-            await _stop_mcp_client(client)
-
-
-def _build_cli_parser() -> argparse.ArgumentParser:
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Run the Tester Agent (MCP-enabled)")
-    parser.add_argument("project_path", help="Path to the Godot project root")
-    return parser
+    result = run_godot_compiler.invoke({"project_path": project_path})
+    print("COMPILE_RESULT:", result)
 
 
 def main() -> int:
-    """Synchronous CLI entry that launches the async agent runner."""
-    parser = _build_cli_parser()
+    parser = argparse.ArgumentParser(description="Run the Tester Agent")
+    parser.add_argument("project_path", help="Path to the Godot project root")
     args = parser.parse_args()
-    project_path = str(Path(args.project_path))
 
     try:
-        asyncio.run(run_agent(project_path))
+        asyncio.run(run_agent(str(Path(args.project_path))))
         return 0
     except KeyboardInterrupt:
-        print("Interrupted by user")
         return 2
     except Exception as exc:
         print("Agent failed:", exc)

@@ -17,7 +17,7 @@ from prompts import CHECKLIST_FIELDS, OPTIONAL_INDICES, REQUIRED_INDICES, build_
 from state import FIELD_KEYS
 from tools import AGENT_DATA_PATH, save_contracts
 
-load_dotenv()
+load_dotenv(override=True)
 
 # ---------------------------------------------------------------------------
 # Icon
@@ -533,6 +533,333 @@ with left_col:
 
     st.markdown('</div>', unsafe_allow_html=True)
 
+
+# ── Godot project bootstrap + pipeline trigger ──────────────────────────────
+_GODOT_PROJECT_ICON_SVG = """\
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128">
+  <rect width="128" height="128" rx="16" fill="#478cbf"/>
+  <text x="64" y="80" font-size="72" text-anchor="middle" fill="white">G</text>
+</svg>
+"""
+
+_PROJECT_GODOT_TEMPLATE = """\
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters are not all documented.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="{name}"
+config/features=PackedStringArray("4.3", "Forward Plus")
+config/icon="res://icon.svg"
+run/main_scene="res://main.tscn"
+
+[input]
+
+move_left={{
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":65,"key_label":0,"unicode":97,"location":0,"echo":false,"script":null)
+, Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194319,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}}
+move_right={{
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":68,"key_label":0,"unicode":100,"location":0,"echo":false,"script":null)
+, Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194321,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}}
+move_up={{
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":87,"key_label":0,"unicode":119,"location":0,"echo":false,"script":null)
+, Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194320,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}}
+move_down={{
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":83,"key_label":0,"unicode":115,"location":0,"echo":false,"script":null)
+, Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194322,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}}
+jump={{
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":32,"key_label":0,"unicode":32,"location":0,"echo":false,"script":null)
+]
+}}
+shoot={{
+"deadzone": 0.5,
+"events": [Object(InputEventMouseButton,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"canceled":false,"button_index":1,"canceled_pressed":false,"double_click":false,"script":null)
+, Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":74,"key_label":0,"unicode":106,"location":0,"echo":false,"script":null)
+]
+}}
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+"""
+
+_MAIN_TSCN_TEMPLATE = """\
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://main.gd" id="1_main"]
+
+[node name="Main" type="Node"]
+script = ExtResource("1_main")
+"""
+
+
+def _create_godot_project(project_path: Path, game_name: str) -> None:
+    """Create or repair a minimal Godot 4 project at *project_path*.
+
+    Guarantees that Godot recognizes the directory as a runnable project:
+    valid ``project.godot`` (config_version + main_scene + input map),
+    a ``main.tscn`` that loads ``main.gd``, a placeholder ``main.gd``,
+    and an ``icon.svg``.
+    """
+    project_path.mkdir(parents=True, exist_ok=True)
+
+    godot_file = project_path / "project.godot"
+    needs_rewrite = True
+    if godot_file.exists():
+        try:
+            existing = godot_file.read_text(encoding="utf-8")
+            has_config = "\nconfig_version=" in ("\n" + existing.split("[", 1)[0])
+            has_main_scene = "run/main_scene" in existing
+            has_input = "[input]" in existing
+            needs_rewrite = not (has_config and has_main_scene and has_input)
+        except Exception:
+            needs_rewrite = True
+    if needs_rewrite:
+        godot_file.write_text(
+            _PROJECT_GODOT_TEMPLATE.format(name=game_name), encoding="utf-8"
+        )
+
+    main_tscn = project_path / "main.tscn"
+    if not main_tscn.exists():
+        main_tscn.write_text(_MAIN_TSCN_TEMPLATE, encoding="utf-8")
+
+    main_gd = project_path / "main.gd"
+    if not main_gd.exists():
+        main_gd.write_text(
+            "extends Node\n\nfunc _ready() -> void:\n\tprint(\"Game booted.\")\n",
+            encoding="utf-8",
+        )
+
+    icon_file = project_path / "icon.svg"
+    if not icon_file.exists():
+        icon_file.write_text(_GODOT_PROJECT_ICON_SVG, encoding="utf-8")
+
+
+def _derive_game_name(request_contract: dict) -> str:
+    import re
+    mechanic = request_contract.get("game_mechanic", "") if request_contract else ""
+    words = re.findall(r"[A-Za-z]+", mechanic)[:5]
+    return " ".join(words).title() if words else "My Game"
+
+
+def _launch_godot_game(project_path: str) -> int:
+    """Launch Godot in run mode (plays the project) and return the pid.
+
+    Raises ``FileNotFoundError`` if ``GODOT_EXECUTABLE`` does not exist.
+    """
+    import subprocess
+    import os as _os
+    godot_exe = _os.getenv("GODOT_EXECUTABLE", "godot")
+    if godot_exe != "godot" and not Path(godot_exe).exists():
+        raise FileNotFoundError(f"GODOT_EXECUTABLE not found: {godot_exe}")
+    proc = subprocess.Popen(
+        [godot_exe, "--path", project_path],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return proc.pid
+
+
+def _kill_godot_holding_project(project_path: str) -> list[int]:
+    """Terminate any Godot process whose cmdline references *project_path*.
+
+    Returns the list of killed pids. Silently returns an empty list when
+    ``psutil`` isn't installed.
+    """
+    killed: list[int] = []
+    try:
+        import psutil  # type: ignore
+    except ImportError:
+        return killed
+
+    target = str(Path(project_path)).lower().replace("\\", "/")
+    for proc in psutil.process_iter(["name", "cmdline"]):
+        try:
+            name = (proc.info.get("name") or "").lower()
+            if not name.startswith("godot"):
+                continue
+            cmd = " ".join(proc.info.get("cmdline") or []).lower().replace("\\", "/")
+            if target in cmd:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except psutil.TimeoutExpired:
+                    proc.kill()
+                killed.append(proc.pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return killed
+
+
+def _best_effort_wipe(project_root: Path) -> list[str]:
+    """Best-effort removal of regeneratable files. Returns skipped paths."""
+    import shutil
+    skipped: list[str] = []
+    if not project_root.exists():
+        return skipped
+
+    for child in project_root.iterdir():
+        try:
+            if child.is_dir():
+                if child.name in (".godot",):
+                    continue  # leave Godot's import cache to speed things up
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+        except Exception:
+            skipped.append(str(child.relative_to(project_root)))
+    return skipped
+
+
+def _run_pipeline() -> None:
+    """Wipe game_project/, run the orchestrator pipeline, then open Godot."""
+    import asyncio
+    import os as _os
+    import shutil
+    import sys
+    import time
+    import traceback
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+
+    def _log(msg: str) -> None:
+        # Mirror every step to the terminal so the user can confirm progress
+        # even if Streamlit's UI doesn't flush the inner status writes.
+        print(f"[pipeline] {msg}", flush=True)
+
+    request_contract = st.session_state.get("request_contract_data") or {}
+    sprite_contract  = st.session_state.get("sprite_contract_data") or {}
+
+    game_name    = _derive_game_name(request_contract)
+    project_root = Path(_os.getenv("GODOT_PROJECT_PATH", "")).expanduser()
+    if not project_root.parts:
+        project_root = Path(__file__).parent.parent / "game_project"
+    project_path_str = str(project_root)
+
+    progress = st.empty()
+    log_lines: list[str] = []
+
+    def _ui(line: str) -> None:
+        log_lines.append(line)
+        progress.markdown(
+            "### Generating your Godot game…\n\n" + "\n\n".join(log_lines)
+        )
+        _log(line.replace("**", "").replace("`", ""))
+        # Yield so Streamlit actually flushes the markdown before the next
+        # blocking step. Without this, asyncio.run swallows every prior write.
+        time.sleep(0.05)
+
+    try:
+        _ui(f"🧹 Cleaning previous project at `{project_path_str}`…")
+        killed = _kill_godot_holding_project(project_path_str)
+        if killed:
+            _ui(f"   ✓ Closed prior Godot process(es): {killed}")
+        skipped = _best_effort_wipe(project_root)
+        if skipped:
+            _ui(f"   ⚠️ Could not refresh {len(skipped)} locked file(s); using overwrite path: {skipped[:5]}")
+        else:
+            _ui("   ✓ Removed previous project")
+
+        _ui("📁 Creating fresh Godot project (project.godot, main.tscn, input map, icon)…")
+        _create_godot_project(project_root, game_name)
+        _os.environ["GODOT_PROJECT_PATH"] = project_path_str
+        _ui("   ✓ Base project created")
+
+        try:
+            from orchestrator import trigger_godot_generation
+        except ImportError as exc:
+            _ui(f"❌ Could not import orchestrator: `{exc}`")
+            st.error("Pipeline failed.")
+            return
+
+        rc = request_contract or {}
+        sc = sprite_contract or {}
+        user_prompt = (
+            f"Game: {game_name}\n"
+            f"Mechanic: {rc.get('game_mechanic', '')}\n"
+            f"Enemy interaction: {rc.get('enemy_interaction', '')}\n"
+            f"Player abilities: {rc.get('character_abilities', '')}\n"
+            f"Start screen: {rc.get('start_screen_instructions', '')}\n"
+            f"Main character: {sc.get('main_character', '')}\n"
+            f"Enemies: {sc.get('enemies', '')}\n"
+            f"World background: {sc.get('world_background', '')}\n"
+            f"Tileset: {sc.get('tileset_environment', '')}\n"
+            f"Main menu background: {sc.get('main_menu_background', '')}\n"
+            f"Project path: {project_path_str}\n"
+        )
+
+        _ui("⚙️ Running pipeline: A1 → A3 (sprites) → A2 (LLM writes code, ~60s) → A4 (test)…")
+        _ui("_The LLM step is the slowest. Watch the terminal window for live progress._")
+        t0 = time.time()
+        with st.spinner("Agents are working… (30–120 seconds)"):
+            result = asyncio.run(trigger_godot_generation(user_prompt=user_prompt))
+        elapsed = time.time() - t0
+        pipeline_status = (
+            result.get("status", "unknown") if isinstance(result, dict) else "completed"
+        )
+        _ui(f"   ✓ Pipeline finished in {elapsed:.1f}s (status: `{pipeline_status}`)")
+
+        compile_result = (
+            result.get("compile_result", "") if isinstance(result, dict) else ""
+        )
+        if compile_result and "GODOT_COMPILER_ERRORS" in compile_result:
+            _ui("   ⚠️ Godot reported compile issues — opening anyway so you can inspect.")
+        elif compile_result:
+            _ui("   ✓ Godot compiled the project successfully")
+
+        _ui("🚀 Launching Godot (running the project)…")
+        try:
+            pid = _launch_godot_game(project_path_str)
+            _ui(f"   ✓ Godot launched (pid={pid})")
+        except FileNotFoundError as exc:
+            _ui(f"❌ {exc}")
+            st.error(
+                "Set `GODOT_EXECUTABLE` in `.env` to the full path of your Godot 4 binary "
+                "(e.g. `C:/Godot/godot.exe`)."
+            )
+            return
+        except Exception as exc:
+            _ui(f"❌ Could not launch Godot: `{exc}`")
+            st.error(traceback.format_exc())
+            return
+
+        st.success(
+            f"✅ **{game_name}** is ready. Godot is opening — switch to it (Alt+Tab) "
+            f"and press **F5** to play.\n\n📁 `{project_path_str}`"
+        )
+
+        if isinstance(result, dict) and result.get("generated_code"):
+            with st.expander("🎬 Generated GDScript (truncated)", expanded=False):
+                st.code(str(result["generated_code"])[:3000], language="gdscript")
+        if compile_result:
+            with st.expander("🧪 Godot compiler output", expanded=False):
+                st.code(compile_result[:3000], language="text")
+
+    except Exception as exc:
+        _log(f"FATAL: {exc}")
+        st.error(f"Pipeline failed: {exc}")
+        st.code(traceback.format_exc())
+
+
 # ── Right panel ──────────────────────────────────────────────────────────────
 with right_col:
     st.markdown("""
@@ -577,8 +904,8 @@ with right_col:
 
         st.info(f"📁 Saved to: `{AGENT_DATA_PATH}`")
 
-        if st.button("🚀 Proceed to Scene Generation", type="primary", use_container_width=True):
-            st.success("✅ Handing off to the Scene Generation agent...")
+        if st.button("🚀 Run Full Pipeline", type="primary", use_container_width=True):
+            _run_pipeline()
 
         st.stop()
 
@@ -595,163 +922,167 @@ with right_col:
     else:
         prompt_to_process = st.chat_input("Write your answer...")
 
-    def _build_force_message(n_fields: int) -> str:
-        """Return the enrichment instruction injected before the save call.
-
-        Args:
-            n_fields: Number of active fields collected.
-
-        Returns:
-            A prompt string instructing the LLM to expand all fields and call save_contracts.
-        """
-        return (
-            f"You now have answers for all {n_fields} required fields. "
-            "Call save_contracts NOW. For EVERY field, write rich expanded Godot specs — "
-            "do NOT copy the user's words verbatim. Expand into full technical detail:\n"
-            "• game_mechanic: Camera2D mode + smoothing, gravity px/s², world width px, "
-            "HUD elements with screen positions, win/lose conditions, level structure\n"
-            "• enemy_interaction: collision shape + exact px size, damage amount + type, "
-            "knockback force, patrol range px, aggro radius px, defeat method, score, drops\n"
-            "• character_abilities: walk px/s, run px/s, jump_velocity px/s, max jump height px, "
-            "all animation states with frame counts (idle:4f run:8f jump:3f fall:2f hurt:2f death:4f), "
-            "coyote_time ms, jump_buffer ms, special ability cooldowns\n"
-            "• main_character: sprite size px, full color palette with 4-5 hex codes and roles, "
-            "spritesheet layout, shader effects, particle effects\n"
-            "• All visual fields: sprite sizes, hex palettes, frame counts, animations\n"
-            "For any field the user did NOT answer — invent smart, coherent defaults. "
-            "Every field must be 4-6 sentences of dense detail. No empty strings."
-        )
-
     def process_message(prompt: str):
-        """Handle one complete user turn: extract, route, then stream or save.
-
-        Args:
-            prompt: The raw text the user submitted.
-        """
+        """Handle one complete user turn: stream response, handle tool calls."""
         st.session_state.chat_history.append({"role": "user", "content": prompt})
         st.session_state.lc_messages.append(HumanMessage(content=prompt))
 
-        # Run LangGraph: extract fields from this message and determine phase.
-        updated_state = get_graph().invoke({
-            **st.session_state.graph_state,
-            "latest_user_message": prompt,
-        })
-        st.session_state.graph_state = updated_state
-        should_save = updated_state.get("phase") == "saving"
+        # Run graph extraction silently to keep the stepper/progress up to date.
+        try:
+            updated_state = get_graph().invoke({
+                **st.session_state.graph_state,
+                "latest_user_message": prompt,
+            })
+            st.session_state.graph_state = updated_state
+        except Exception:
+            pass  # stepper stays as-is; conversation continues normally
 
         messages_to_send = list(st.session_state.lc_messages)
-        if should_save:
-            messages_to_send.append(HumanMessage(content=_build_force_message(total_active)))
 
-        response        = None
-        raw_content     = ""
+        # Always stream — the LLM decides when to call save_contracts.
+        streamed_response = None
+        raw_content = ""
         display_content = ""
 
-        if should_save:
+        try:
             with stream_container:
                 with st.chat_message("assistant", avatar=_ICON_IMAGE):
                     placeholder = st.empty()
                     placeholder.markdown(
                         '<span style="color:rgba(255,255,255,0.35);font-style:italic">'
-                        'Saving your game spec<span class="dots">...</span></span>',
+                        'Thinking<span class="dots">...</span></span>',
                         unsafe_allow_html=True,
                     )
-                    for attempt in range(3):
-                        try:
-                            response = invoke_with_backoff(messages_to_send, with_tools=True)
-                        except Exception as exc:
-                            st.error(f"LLM error: {exc}")
-                            return
-                        if response.tool_calls:
-                            break
-                        messages_to_send = list(st.session_state.lc_messages) + [
-                            HumanMessage(content=(
-                                "URGENT: Call save_contracts tool NOW. "
-                                "All information has been collected. No more questions. Tool call only."
-                            ))
-                        ]
-                    if not response.tool_calls:
-                        st.error("Could not trigger save — please type 'save' to retry.")
-                        return
-        else:
-            streamed_response = None
-            try:
-                with stream_container:
-                    with st.chat_message("assistant", avatar=_ICON_IMAGE):
-                        placeholder = st.empty()
-                        placeholder.markdown(
-                            '<span style="color:rgba(255,255,255,0.35);font-style:italic">'
-                            'Thinking<span class="dots">...</span></span>',
-                            unsafe_allow_html=True,
-                        )
-                        for chunk in stream_with_backoff(messages_to_send):
-                            if streamed_response is None:
-                                streamed_response = chunk
-                            else:
-                                streamed_response = streamed_response + chunk
-                            if chunk.content:
-                                raw_content += chunk.content
-                                placeholder.markdown(raw_content.strip() + " ▌")
+                    for chunk in stream_with_backoff(messages_to_send):
+                        if streamed_response is None:
+                            streamed_response = chunk
+                        else:
+                            streamed_response = streamed_response + chunk
+                        if chunk.content:
+                            raw_content += chunk.content
+                            placeholder.markdown(raw_content.strip() + " ▌")
 
-                        display_content = raw_content.strip()
-                        placeholder.markdown(display_content if display_content else "")
+                    display_content = raw_content.strip()
+                    placeholder.markdown(display_content if display_content else "")
 
-            except Exception as exc:
-                st.error(f"LLM error: {exc}")
-                return
+        except Exception as exc:
+            st.error(f"LLM error: {exc}")
+            return
 
-            response = streamed_response
-
+        response = streamed_response
         if response is None:
             return
 
         st.session_state.lc_messages.append(response)
 
-        # Guard: block premature saves if the graph phase changed between turns.
-        if response.tool_calls and not should_save:
-            block_msg = HumanMessage(content=(
-                "You called save_contracts too early. "
-                "Keep the conversation going and ask about the next missing field."
-            ))
-            st.session_state.lc_messages.append(block_msg)
+        user_turns = sum(1 for m in st.session_state.chat_history if m["role"] == "user")
+
+        def _save_from_args(args: dict, tool_call_id: str) -> None:
             try:
-                redirect = invoke_with_backoff(st.session_state.lc_messages, with_tools=False)
+                result = save_contracts.invoke(args)
             except Exception as exc:
-                st.error(f"LLM error: {exc}")
+                st.error(f"Error saving contracts: {exc}")
                 return
-            st.session_state.lc_messages.append(redirect)
-            if redirect.content:
-                st.session_state.chat_history.append({"role": "assistant", "content": redirect.content})
+            st.session_state.lc_messages.append(
+                ToolMessage(content=result, tool_call_id=tool_call_id)
+            )
+            try:
+                final = invoke_with_backoff(st.session_state.lc_messages, with_tools=False)
+                st.session_state.lc_messages.append(final)
+                st.session_state.chat_history.append(
+                    {"role": "assistant", "content": final.content}
+                )
+            except Exception:
+                pass
+            st.session_state.contracts_saved = True
             st.rerun()
-            return
 
         if response.tool_calls:
             for tool_call in response.tool_calls:
                 if tool_call["name"] == "save_contracts":
-                    try:
-                        result = save_contracts.invoke(tool_call["args"])
-                    except Exception as exc:
-                        st.error(f"Error saving contracts: {exc}")
+                    if user_turns < 4:
+                        block_msg = HumanMessage(content=(
+                            f"You tried to save after only {user_turns} user answer(s). "
+                            "You must ask about all 4 required fields first: "
+                            "game mechanic, enemy interaction, character abilities, main character look. "
+                            "Keep asking — do NOT call save_contracts yet."
+                        ))
+                        st.session_state.lc_messages.append(block_msg)
+                        try:
+                            redirect = invoke_with_backoff(st.session_state.lc_messages, with_tools=False)
+                            st.session_state.lc_messages.append(redirect)
+                            if redirect.content:
+                                st.session_state.chat_history.append({"role": "assistant", "content": redirect.content})
+                        except Exception:
+                            pass
+                        st.rerun()
                         return
-                    st.session_state.lc_messages.append(
-                        ToolMessage(content=result, tool_call_id=tool_call["id"])
-                    )
-                    try:
-                        final = invoke_with_backoff(st.session_state.lc_messages, with_tools=False)
-                        st.session_state.lc_messages.append(final)
-                        st.session_state.chat_history.append(
-                            {"role": "assistant", "content": final.content}
-                        )
-                    except Exception:
-                        pass
-                    st.session_state.contracts_saved = True
-                    st.rerun()
-        else:
-            if display_content:
+                    _save_from_args(tool_call["args"], tool_call["id"])
+                    return
+
+        # Fallback: model wrote a JSON tool call in plain text instead of using
+        # the tool-calling API. Detect formats like:
+        #   {"name": "save_contracts", "parameters": {...}}
+        if display_content and "save_contracts" in display_content:
+            import json as _json
+            args: dict | None = None
+            # Walk every '{' and try to parse a balanced JSON object starting there.
+            text = display_content
+            for start in range(len(text)):
+                if text[start] != "{":
+                    continue
+                depth = 0
+                in_str = False
+                esc = False
+                for end in range(start, len(text)):
+                    c = text[end]
+                    if esc:
+                        esc = False
+                        continue
+                    if c == "\\" and in_str:
+                        esc = True
+                        continue
+                    if c == '"':
+                        in_str = not in_str
+                        continue
+                    if in_str:
+                        continue
+                    if c == "{":
+                        depth += 1
+                    elif c == "}":
+                        depth -= 1
+                        if depth == 0:
+                            candidate = text[start : end + 1]
+                            try:
+                                obj = _json.loads(candidate)
+                            except Exception:
+                                break
+                            if (
+                                isinstance(obj, dict)
+                                and obj.get("name") == "save_contracts"
+                            ):
+                                p = (
+                                    obj.get("parameters")
+                                    or obj.get("arguments")
+                                    or obj.get("args")
+                                )
+                                if isinstance(p, dict):
+                                    args = p
+                            break
+                if args is not None:
+                    break
+            if args is not None:
                 st.session_state.chat_history.append(
-                    {"role": "assistant", "content": display_content}
+                    {"role": "assistant", "content": "Got it — saving your game spec now…"}
                 )
-            st.rerun()
+                _save_from_args(args, "fallback-json")
+                return
+
+        if display_content:
+            st.session_state.chat_history.append(
+                {"role": "assistant", "content": display_content}
+            )
+        st.rerun()
 
     if prompt_to_process and prompt_to_process != st.session_state.last_processed_input:
         st.session_state.last_processed_input = prompt_to_process

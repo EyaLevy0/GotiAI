@@ -110,13 +110,15 @@ async def run_coder_agent(state: dict) -> dict:
 		if selected_kit:
 			asset_instructions = f"Use sprites from the {selected_kit} kit in assets/."
 
-	load_dotenv()
-	# Ensure write_gdscript can resolve `res://` paths into the real project root.
-	os.environ["GODOT_PROJECT_PATH"] = project_path
-	# If you have an OpenRouter API key, set OPENAI_API_KEY to that key and
-	# OPENAI_API_BASE to https://api.openrouter.ai/v1 in your .env. Then
-	# use ChatOpenAI which will send requests through the OpenRouter endpoint.
-	llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+	load_dotenv(override=True)
+	import os
+	llm = ChatOpenAI(
+		model="openai/gpt-4o-mini",
+		api_key=os.getenv("OPENROUTER_API_KEY"),
+		base_url="https://openrouter.ai/api/v1",
+		temperature=0,
+		max_tokens=2000,
+	)
 	agent = create_react_agent(
 		model=llm,
 		tools=[write_gdscript],

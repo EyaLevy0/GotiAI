@@ -75,12 +75,20 @@ def _exponential_backoff(fn, *, max_retries: int = 4, base_delay: float = 1.0) -
 def _get_cached_llm(with_tools: bool):
     """Create and cache the main conversational LLM instance.
 
-    Args:
-        with_tools: When True, binds the ``save_contracts`` tool to the LLM.
-
-    Returns:
-        A LangChain chat model, optionally with tools bound.
+    Priority: Groq (fast) → Google → OpenRouter → Ollama.
     """
+    if os.getenv("GROQ_API_KEY"):
+        from langchain_groq import ChatGroq
+
+        llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.3)
+        return llm.bind_tools([save_contracts]) if with_tools else llm
+
+    if os.getenv("GOOGLE_API_KEY"):
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.3)
+        return llm.bind_tools([save_contracts]) if with_tools else llm
+
     if os.getenv("OPENROUTER_API_KEY"):
         from langchain_openai import ChatOpenAI
 
@@ -92,18 +100,6 @@ def _get_cached_llm(with_tools: bool):
         )
         return llm.bind_tools([save_contracts]) if with_tools else llm
 
-    if os.getenv("GOOGLE_API_KEY"):
-        from langchain_google_genai import ChatGoogleGenerativeAI
-
-        llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.3)
-        return llm.bind_tools([save_contracts]) if with_tools else llm
-
-    if os.getenv("GROQ_API_KEY"):
-        from langchain_groq import ChatGroq
-
-        llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.3)
-        return llm.bind_tools([save_contracts]) if with_tools else llm
-
     from langchain_ollama import ChatOllama
 
     llm = ChatOllama(model="qwen2.5:7b")
@@ -112,13 +108,17 @@ def _get_cached_llm(with_tools: bool):
 
 @st.cache_resource
 def _get_plain_llm_cached():
-    """Create and cache a tool-free LLM tuned for deterministic structured extraction.
+    """Cache a fast, tool-free LLM for structured extraction (temperature=0)."""
+    if os.getenv("GROQ_API_KEY"):
+        from langchain_groq import ChatGroq
 
-    Uses ``temperature=0.0`` for reproducible JSON output.
+        return ChatGroq(model="llama-3.1-8b-instant", temperature=0.0)
 
-    Returns:
-        A plain (no tools bound) LangChain chat model.
-    """
+    if os.getenv("GOOGLE_API_KEY"):
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        return ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.0)
+
     if os.getenv("OPENROUTER_API_KEY"):
         from langchain_openai import ChatOpenAI
 
@@ -128,16 +128,6 @@ def _get_plain_llm_cached():
             base_url="https://openrouter.ai/api/v1",
             temperature=0.0,
         )
-
-    if os.getenv("GOOGLE_API_KEY"):
-        from langchain_google_genai import ChatGoogleGenerativeAI
-
-        return ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.0)
-
-    if os.getenv("GROQ_API_KEY"):
-        from langchain_groq import ChatGroq
-
-        return ChatGroq(model="llama-3.3-70b-versatile", temperature=0.0)
 
     from langchain_ollama import ChatOllama
 
@@ -153,72 +143,42 @@ def get_plain_llm():
     return _get_plain_llm_cached()
 
 
-def _gemini_fallback(with_tools: bool):
-    """Instantiate a fresh Gemini LLM for use as a rate-limit fallback.
+def _openrouter_fallback(with_tools: bool):
+    """OpenRouter fallback LLM used when the primary provider is rate-limited."""
+    from langchain_openai import ChatOpenAI
 
-    Args:
-        with_tools: When True, binds the ``save_contracts`` tool.
-
-    Returns:
-        A Gemini chat model instance.
-    """
-    from langchain_google_genai import ChatGoogleGenerativeAI
-
-    llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", temperature=0.3)
+    llm = ChatOpenAI(
+        model="meta-llama/llama-3.3-70b-instruct",
+        api_key=os.getenv("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1",
+        temperature=0.3,
+    )
     return llm.bind_tools([save_contracts]) if with_tools else llm
 
 
 def invoke_with_backoff(messages, *, with_tools: bool = True) -> Any:
-    """Invoke the primary LLM with exponential backoff.
-
-    On persistent rate-limit failure, falls back to Google Gemini if
-    ``GOOGLE_API_KEY`` is available in the environment.
-
-    Args:
-        messages: List of LangChain message objects to send.
-        with_tools: Whether to use the tool-bound LLM variant.
-
-    Returns:
-        The LLM response message object.
-
-    Raises:
-        The last provider exception if all retries and the fallback are exhausted.
-    """
+    """Invoke the primary LLM with exponential backoff, falling back to OpenRouter."""
     try:
         return _exponential_backoff(lambda: _get_cached_llm(with_tools).invoke(messages))
     except Exception as exc:
-        if _is_rate_limited(exc) and os.getenv("GOOGLE_API_KEY"):
-            logger.warning("Primary provider rate-limited. Switching to Gemini fallback.")
-            fallback = _gemini_fallback(with_tools)
+        if _is_rate_limited(exc) and os.getenv("OPENROUTER_API_KEY"):
+            logger.warning("Primary provider rate-limited. Switching to OpenRouter fallback.")
+            fallback = _openrouter_fallback(with_tools)
             return _exponential_backoff(lambda: fallback.invoke(messages))
         raise
 
 
 def stream_with_backoff(messages) -> Generator:
-    """Stream LLM response chunks with a single Gemini fallback on rate-limit errors.
-
-    Note:
-        Full exponential backoff cannot be applied to a streaming generator without
-        buffering the entire response first (which would break the streaming UX).
-        This function therefore uses a single-shot provider switch: if the primary
-        provider raises a rate-limit error *before the first token is received*,
-        it waits 1 second and retries with Gemini.  Mid-stream errors are re-raised.
-
-    Args:
-        messages: List of LangChain message objects to stream.
-
-    Yields:
-        LLM response chunks.
-    """
+    """Stream LLM response chunks, falling back to OpenRouter on rate-limit."""
     first_chunk_received = False
     try:
         for chunk in _get_cached_llm(True).stream(messages):
             first_chunk_received = True
             yield chunk
     except Exception as exc:
-        if not first_chunk_received and _is_rate_limited(exc) and os.getenv("GOOGLE_API_KEY"):
-            logger.warning("Stream rate-limited before first token. Switching to Gemini fallback.")
+        if not first_chunk_received and _is_rate_limited(exc) and os.getenv("OPENROUTER_API_KEY"):
+            logger.warning("Stream rate-limited before first token. Switching to OpenRouter fallback.")
             time.sleep(1.0)
-            yield from _gemini_fallback(with_tools=True).stream(messages)
+            yield from _openrouter_fallback(with_tools=True).stream(messages)
         else:
             raise

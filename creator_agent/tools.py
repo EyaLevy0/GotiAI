@@ -8,38 +8,37 @@ from pathlib import Path
 from langchain_core.tools import tool
 
 
-def _resolve_target_path(file_path: str, project_path: str) -> Path:
-	"""Resolve tool file paths to real filesystem targets.
+def _resolve_project_path(file_path: str) -> Path:
+	"""Translate Godot ``res://`` paths to filesystem paths under GODOT_PROJECT_PATH.
 
-	Supports:
-	- Godot-style paths (`res://main.gd`) resolved under `project_path`
-	- absolute filesystem paths (used as-is)
-	- relative paths (resolved under `project_path` when provided)
+	Also strips Windows-invalid characters and rejects empty paths.
 	"""
-	path_str = file_path.strip()
-	if path_str.startswith("res://"):
-		if not project_path:
-			raise ValueError("project_path is required when writing res:// paths")
-		rel = path_str[len("res://") :].lstrip("/")
-		return Path(project_path) / rel
+	cleaned = file_path.strip().replace("\\", "/")
+	project_root = Path(os.getenv("GODOT_PROJECT_PATH", "")).expanduser()
+	if not project_root.parts:
+		project_root = Path.cwd()
 
-	target = Path(path_str)
-	if target.is_absolute():
-		return target
+	if cleaned.startswith("res://"):
+		rel = cleaned[len("res://"):]
+		return project_root / rel
 
-	if project_path:
-		return Path(project_path) / target
-	return target
+	candidate = Path(cleaned)
+	if candidate.is_absolute():
+		return candidate
+	return project_root / cleaned
 
 
 @tool
 def write_gdscript(file_path: str, code: str) -> str:
 	"""Write GDScript or any Godot project file to the given path.
 
-	Creates any missing parent directories before writing.
+	Accepts either an absolute path, a path relative to the Godot project root,
+	or a Godot ``res://`` URI. Creates any missing parent directories.
 	"""
-	project_path = os.getenv("GODOT_PROJECT_PATH", "")
-	target = _resolve_target_path(file_path, project_path)
-	target.parent.mkdir(parents=True, exist_ok=True)
-	target.write_text(code, encoding="utf-8")
-	return f"Successfully wrote file: {target}"
+	try:
+		target = _resolve_project_path(file_path)
+		target.parent.mkdir(parents=True, exist_ok=True)
+		target.write_text(code, encoding="utf-8")
+		return f"Successfully wrote file: {target}"
+	except OSError as exc:
+		return f"ERROR_WRITING_FILE {file_path}: {exc}"

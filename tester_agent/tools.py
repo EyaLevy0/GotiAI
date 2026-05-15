@@ -59,7 +59,7 @@ def _resolve_godot_executable() -> str:
 
 
 def _build_godot_command(executable: str, project_path: str) -> list[str]:
-	return [executable, "--headless", "--check-only", "--path", project_path]
+	return [executable, "--headless", "--path", project_path, "--quit"]
 
 
 def _normalize_lines(text: str) -> list[str]:
@@ -109,8 +109,25 @@ def run_godot_compiler(project_path: str) -> str:
 	project_root = Path(project_path).expanduser()
 	if not project_root.exists():
 		return f"INVALID_PROJECT_PATH: {project_path} does not exist."
+	if not (project_root / "project.godot").exists():
+		return f"INVALID_PROJECT_PATH: No project.godot found in {project_path}."
 
 	config = load_config()
+
+	# Pre-step: ensure assets are imported (creates .godot/imported/*.ctex
+	# sidecars so `load("res://assets/foo.png")` works at runtime).
+	if not (project_root / ".godot" / "imported").exists():
+		try:
+			subprocess.run(
+				[config.godot_executable, "--headless", "--path", str(project_root), "--import"],
+				capture_output=True,
+				text=True,
+				timeout=120,
+				check=False,
+			)
+		except Exception:
+			pass
+
 	command = _build_godot_command(config.godot_executable, str(project_root))
 
 	try:
