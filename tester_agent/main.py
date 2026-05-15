@@ -41,7 +41,11 @@ async def _start_mcp_client(command: list[str]) -> MultiServerMCPClient:
     closed/stopped by the caller (see `run_agent` cleanup code).
     """
     client = MultiServerMCPClient(
-        server_commands=[command], server_parameters=StdioServerParameters()
+        server_commands=[command],
+        server_parameters=StdioServerParameters(
+            command=command[0],
+            args=command[1:],
+        ),
     )
 
     # Prefer async context manager style if the client supports it. We still
