@@ -13,7 +13,11 @@ from pathlib import Path
 
 from langchain_core.tools import tool
 
-
+def register_autoload(project_path, script_name, script_path):
+    config_path = os.path.join(project_path, "project.godot")
+    with open(config_path, "a", encoding="utf-8") as f:
+        f.write(f'\n[autoload]\n\n{script_name}="*res://{script_path}"\n')
+        
 def _build_sprite_loader_script() -> str:
     """Return the Godot 4.x GDScript helper used by the Sprite Agent."""
 
@@ -98,10 +102,13 @@ def inject_kit_assets(selected_kit: str, godot_project_path: str) -> str:
     try:
         source_kit_dir, target_assets_dir = _copy_kit_tree(selected_kit, godot_project_path)
         gdscript_path = _write_sprite_loader(godot_project_path)
+        
+        register_autoload(godot_project_path, "SpriteLoader", "SpriteLoader.gd")
+        
     except Exception as exc:
         return f"ERROR: {exc}"
 
     return (
-        f"Success: injected '{selected_kit}' from {source_kit_dir} into {target_assets_dir} "
-        f"and created {gdscript_path}"
+        f"Success: injected '{selected_kit}' from {source_kit_dir} into {target_assets_dir}, "
+        f"created {gdscript_path}, and registered SpriteLoader in Autoload."
     )

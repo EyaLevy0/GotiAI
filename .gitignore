@@ -43,3 +43,6 @@ game_project/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local secrets (ignored)
+secrets_local.py

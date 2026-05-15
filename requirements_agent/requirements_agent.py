@@ -83,7 +83,7 @@ def reset_session():
     for key in [
         "lc_messages", "chat_history", "contracts_saved", "pending_input",
         "request_contract_data", "sprite_contract_data", "enabled_optional",
-        "graph_state",
+        "graph_state", "last_processed_input",
     ]:
         st.session_state.pop(key, None)
     st.rerun()
@@ -911,6 +911,10 @@ with right_col:
 
     stream_container = st.container()
 
+    # Prevent infinite loops: track the last processed input to avoid reprocessing on Streamlit reruns
+    if "last_processed_input" not in st.session_state:
+        st.session_state.last_processed_input = None
+
     if st.session_state.pending_input:
         pending = st.session_state.pending_input
         st.session_state.pending_input = None
@@ -1080,5 +1084,7 @@ with right_col:
             )
         st.rerun()
 
-    if prompt_to_process:
+    if prompt_to_process and prompt_to_process != st.session_state.last_processed_input:
+        st.session_state.last_processed_input = prompt_to_process
         process_message(prompt_to_process)
+
