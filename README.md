@@ -1,4 +1,4 @@
-# GotiAI: Autonomous Godot 4 Game Generation
+# GotiAI: Autonomous Multi AI-Agents Godot 4 Game Generation
 
 <img src="flow-graph.jpeg" width="700" alt="GotiAI flow graph">
 
