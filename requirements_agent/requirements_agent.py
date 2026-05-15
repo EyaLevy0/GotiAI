@@ -17,7 +17,7 @@ from prompts import CHECKLIST_FIELDS, OPTIONAL_INDICES, REQUIRED_INDICES, build_
 from state import FIELD_KEYS
 from tools import AGENT_DATA_PATH, save_contracts
 
-load_dotenv()
+load_dotenv(override=True)
 
 # ---------------------------------------------------------------------------
 # Icon
@@ -533,6 +533,239 @@ with left_col:
 
     st.markdown('</div>', unsafe_allow_html=True)
 
+
+# ── Godot project bootstrap + pipeline trigger ──────────────────────────────
+_GODOT_PROJECT_ICON_SVG = """\
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128">
+  <rect width="128" height="128" rx="16" fill="#478cbf"/>
+  <text x="64" y="80" font-size="72" text-anchor="middle" fill="white">G</text>
+</svg>
+"""
+
+_PROJECT_GODOT_TEMPLATE = """\
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters are not all documented.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="{name}"
+config/features=PackedStringArray("4.3", "Forward Plus")
+config/icon="res://icon.svg"
+run/main_scene="res://main.tscn"
+
+[input]
+
+move_left={{
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":65,"key_label":0,"unicode":97,"location":0,"echo":false,"script":null)
+, Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194319,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}}
+move_right={{
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":68,"key_label":0,"unicode":100,"location":0,"echo":false,"script":null)
+, Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194321,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}}
+move_up={{
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":87,"key_label":0,"unicode":119,"location":0,"echo":false,"script":null)
+, Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194320,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}}
+move_down={{
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":83,"key_label":0,"unicode":115,"location":0,"echo":false,"script":null)
+, Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":4194322,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
+]
+}}
+jump={{
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":32,"key_label":0,"unicode":32,"location":0,"echo":false,"script":null)
+]
+}}
+shoot={{
+"deadzone": 0.5,
+"events": [Object(InputEventMouseButton,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"canceled":false,"button_index":1,"canceled_pressed":false,"double_click":false,"script":null)
+, Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":74,"key_label":0,"unicode":106,"location":0,"echo":false,"script":null)
+]
+}}
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+"""
+
+_MAIN_TSCN_TEMPLATE = """\
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://main.gd" id="1_main"]
+
+[node name="Main" type="Node"]
+script = ExtResource("1_main")
+"""
+
+
+def _create_godot_project(project_path: Path, game_name: str) -> None:
+    """Create or repair a minimal Godot 4 project at *project_path*.
+
+    Guarantees that Godot recognizes the directory as a runnable project:
+    valid ``project.godot`` (config_version + main_scene + input map),
+    a ``main.tscn`` that loads ``main.gd``, a placeholder ``main.gd``,
+    and an ``icon.svg``.
+    """
+    project_path.mkdir(parents=True, exist_ok=True)
+
+    godot_file = project_path / "project.godot"
+    needs_rewrite = True
+    if godot_file.exists():
+        try:
+            existing = godot_file.read_text(encoding="utf-8")
+            has_config = "\nconfig_version=" in ("\n" + existing.split("[", 1)[0])
+            has_main_scene = "run/main_scene" in existing
+            has_input = "[input]" in existing
+            needs_rewrite = not (has_config and has_main_scene and has_input)
+        except Exception:
+            needs_rewrite = True
+    if needs_rewrite:
+        godot_file.write_text(
+            _PROJECT_GODOT_TEMPLATE.format(name=game_name), encoding="utf-8"
+        )
+
+    main_tscn = project_path / "main.tscn"
+    if not main_tscn.exists():
+        main_tscn.write_text(_MAIN_TSCN_TEMPLATE, encoding="utf-8")
+
+    main_gd = project_path / "main.gd"
+    if not main_gd.exists():
+        main_gd.write_text(
+            "extends Node\n\nfunc _ready() -> void:\n\tprint(\"Game booted.\")\n",
+            encoding="utf-8",
+        )
+
+    icon_file = project_path / "icon.svg"
+    if not icon_file.exists():
+        icon_file.write_text(_GODOT_PROJECT_ICON_SVG, encoding="utf-8")
+
+
+def _derive_game_name(request_contract: dict) -> str:
+    import re
+    mechanic = request_contract.get("game_mechanic", "") if request_contract else ""
+    words = re.findall(r"[A-Za-z]+", mechanic)[:5]
+    return " ".join(words).title() if words else "My Game"
+
+
+def _open_godot_editor(project_path: str) -> int:
+    """Launch the Godot editor (non-blocking) with the given project.
+
+    Returns the launched process pid. Raises ``FileNotFoundError`` if the
+    configured ``GODOT_EXECUTABLE`` does not exist on disk.
+    """
+    import subprocess
+    import os as _os
+    godot_exe = _os.getenv("GODOT_EXECUTABLE", "godot")
+    if godot_exe != "godot" and not Path(godot_exe).exists():
+        raise FileNotFoundError(f"GODOT_EXECUTABLE not found: {godot_exe}")
+    proc = subprocess.Popen(
+        [godot_exe, "--path", project_path, "--editor"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return proc.pid
+
+
+def _run_pipeline() -> None:
+    """Wipe game_project/, run the orchestrator pipeline, then open Godot."""
+    import asyncio
+    import os as _os
+    import shutil
+    import sys
+    import traceback
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+
+    request_contract = st.session_state.get("request_contract_data") or {}
+    sprite_contract  = st.session_state.get("sprite_contract_data") or {}
+
+    game_name    = _derive_game_name(request_contract)
+    project_root = Path(_os.getenv("GODOT_PROJECT_PATH", "")).expanduser()
+    if not project_root.parts:
+        project_root = Path(__file__).parent.parent / "game_project"
+    project_path_str = str(project_root)
+
+    with st.status("Generating your Godot game…", expanded=True) as status:
+        try:
+            status.write(f"🧹 Cleaning previous project at `{project_path_str}`…")
+            if project_root.exists():
+                try:
+                    shutil.rmtree(project_root)
+                    status.write(f"  ✓ Removed `{project_path_str}`")
+                except Exception as exc:
+                    status.write(
+                        f"  ⚠️ Could not fully clean `{project_path_str}` — "
+                        f"close Godot if it has the project open.\n\n`{exc}`"
+                    )
+                    status.update(label="❌ Could not clean previous project", state="error")
+                    return
+
+            status.write("📁 Creating fresh Godot project (project.godot, main.tscn, input map, icon)…")
+            _create_godot_project(project_root, game_name)
+            _os.environ["GODOT_PROJECT_PATH"] = project_path_str
+
+            try:
+                from orchestrator import trigger_godot_generation
+            except ImportError as exc:
+                status.write(f"❌ Could not import orchestrator: `{exc}`")
+                status.update(label="❌ Import error", state="error")
+                return
+
+            rc = request_contract or {}
+            sc = sprite_contract or {}
+            user_prompt = (
+                f"Game: {game_name}\n"
+                f"Mechanic: {rc.get('game_mechanic', '')}\n"
+                f"Enemy interaction: {rc.get('enemy_interaction', '')}\n"
+                f"Player abilities: {rc.get('character_abilities', '')}\n"
+                f"Start screen: {rc.get('start_screen_instructions', '')}\n"
+                f"Main character: {sc.get('main_character', '')}\n"
+                f"Enemies: {sc.get('enemies', '')}\n"
+                f"World background: {sc.get('world_background', '')}\n"
+                f"Tileset: {sc.get('tileset_environment', '')}\n"
+                f"Main menu background: {sc.get('main_menu_background', '')}\n"
+                f"Project path: {project_path_str}\n"
+            )
+
+            status.write("⚙️ Running pipeline: A1 → A3 (sprites) → A2 (code) → A4 (test)…")
+            status.write("_LLM steps may take 30–90 seconds. Spinner keeps running._")
+            result = asyncio.run(trigger_godot_generation(user_prompt=user_prompt))
+            pipeline_status = (
+                result.get("status", "unknown") if isinstance(result, dict) else "completed"
+            )
+            status.write(f"  ✓ Pipeline finished (status: `{pipeline_status}`)")
+
+            status.write("🚀 Launching Godot editor…")
+            pid = _open_godot_editor(project_path_str)
+            status.write(f"  ✓ Godot launched (pid={pid})")
+
+            status.update(label=f"✅ {game_name} is ready — Godot is opening", state="complete")
+
+            if isinstance(result, dict) and result.get("generated_code"):
+                with st.expander("🎬 Generated GDScript (truncated)", expanded=False):
+                    st.code(str(result["generated_code"])[:3000], language="gdscript")
+            st.info(f"📁 Project: `{project_path_str}`")
+
+        except Exception as exc:
+            status.write(f"❌ **Pipeline failed:** `{exc}`")
+            status.write("```\n" + traceback.format_exc() + "\n```")
+            status.update(label="❌ Pipeline failed", state="error")
+
+
 # ── Right panel ──────────────────────────────────────────────────────────────
 with right_col:
     st.markdown("""
@@ -577,8 +810,8 @@ with right_col:
 
         st.info(f"📁 Saved to: `{AGENT_DATA_PATH}`")
 
-        if st.button("🚀 Proceed to Scene Generation", type="primary", use_container_width=True):
-            st.success("✅ Handing off to the Scene Generation agent...")
+        if st.button("🚀 Run Full Pipeline", type="primary", use_container_width=True):
+            _run_pipeline()
 
         st.stop()
 
@@ -646,6 +879,26 @@ with right_col:
 
         user_turns = sum(1 for m in st.session_state.chat_history if m["role"] == "user")
 
+        def _save_from_args(args: dict, tool_call_id: str) -> None:
+            try:
+                result = save_contracts.invoke(args)
+            except Exception as exc:
+                st.error(f"Error saving contracts: {exc}")
+                return
+            st.session_state.lc_messages.append(
+                ToolMessage(content=result, tool_call_id=tool_call_id)
+            )
+            try:
+                final = invoke_with_backoff(st.session_state.lc_messages, with_tools=False)
+                st.session_state.lc_messages.append(final)
+                st.session_state.chat_history.append(
+                    {"role": "assistant", "content": final.content}
+                )
+            except Exception:
+                pass
+            st.session_state.contracts_saved = True
+            st.rerun()
+
         if response.tool_calls:
             for tool_call in response.tool_calls:
                 if tool_call["name"] == "save_contracts":
@@ -666,30 +919,72 @@ with right_col:
                             pass
                         st.rerun()
                         return
-                    try:
-                        result = save_contracts.invoke(tool_call["args"])
-                    except Exception as exc:
-                        st.error(f"Error saving contracts: {exc}")
-                        return
-                    st.session_state.lc_messages.append(
-                        ToolMessage(content=result, tool_call_id=tool_call["id"])
-                    )
-                    try:
-                        final = invoke_with_backoff(st.session_state.lc_messages, with_tools=False)
-                        st.session_state.lc_messages.append(final)
-                        st.session_state.chat_history.append(
-                            {"role": "assistant", "content": final.content}
-                        )
-                    except Exception:
-                        pass
-                    st.session_state.contracts_saved = True
-                    st.rerun()
-        else:
-            if display_content:
+                    _save_from_args(tool_call["args"], tool_call["id"])
+                    return
+
+        # Fallback: model wrote a JSON tool call in plain text instead of using
+        # the tool-calling API. Detect formats like:
+        #   {"name": "save_contracts", "parameters": {...}}
+        if display_content and "save_contracts" in display_content:
+            import json as _json
+            args: dict | None = None
+            # Walk every '{' and try to parse a balanced JSON object starting there.
+            text = display_content
+            for start in range(len(text)):
+                if text[start] != "{":
+                    continue
+                depth = 0
+                in_str = False
+                esc = False
+                for end in range(start, len(text)):
+                    c = text[end]
+                    if esc:
+                        esc = False
+                        continue
+                    if c == "\\" and in_str:
+                        esc = True
+                        continue
+                    if c == '"':
+                        in_str = not in_str
+                        continue
+                    if in_str:
+                        continue
+                    if c == "{":
+                        depth += 1
+                    elif c == "}":
+                        depth -= 1
+                        if depth == 0:
+                            candidate = text[start : end + 1]
+                            try:
+                                obj = _json.loads(candidate)
+                            except Exception:
+                                break
+                            if (
+                                isinstance(obj, dict)
+                                and obj.get("name") == "save_contracts"
+                            ):
+                                p = (
+                                    obj.get("parameters")
+                                    or obj.get("arguments")
+                                    or obj.get("args")
+                                )
+                                if isinstance(p, dict):
+                                    args = p
+                            break
+                if args is not None:
+                    break
+            if args is not None:
                 st.session_state.chat_history.append(
-                    {"role": "assistant", "content": display_content}
+                    {"role": "assistant", "content": "Got it — saving your game spec now…"}
                 )
-            st.rerun()
+                _save_from_args(args, "fallback-json")
+                return
+
+        if display_content:
+            st.session_state.chat_history.append(
+                {"role": "assistant", "content": display_content}
+            )
+        st.rerun()
 
     if prompt_to_process:
         process_message(prompt_to_process)
