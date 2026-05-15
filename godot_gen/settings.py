@@ -9,16 +9,20 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Settings:
     # LLM
-    llm_base_url: str = os.getenv("LLM_BASE_URL", "http://localhost:1234/v1")
+    llm_base_url: str = os.getenv("LLM_BASE_URL", "http://localhost:52546/v1")
     llm_api_key: str = os.getenv("LLM_API_KEY", "not-needed")
-    llm_model: str = os.getenv("LLM_MODEL", "local-model")
+    # Default to the model id currently exposed by the local container.
+    llm_model: str = os.getenv(
+        "LLM_MODEL",
+        "/models/hf.ibm-research.granite-3.2-8b-instruct-GGUF",
+    )
 
     # Per-stage overrides (optional; fall back to llm_model)
     analyzer_model: str = os.getenv("ANALYZER_MODEL", "") or os.getenv(
-        "LLM_MODEL", "local-model"
+        "LLM_MODEL", "/models/hf.ibm-research.granite-3.2-8b-instruct-GGUF"
     )
     code_model: str = os.getenv("CODE_MODEL", "") or os.getenv(
-        "LLM_MODEL", "local-model"
+        "LLM_MODEL", "/models/hf.ibm-research.granite-3.2-8b-instruct-GGUF"
     )
 
     # Token budgets per stage

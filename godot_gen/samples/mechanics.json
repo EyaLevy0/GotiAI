@@ -1,0 +1,5 @@
+{
+  "game_mechanic": "2D side-scroller moving right like Mario",
+  "enemy_interaction": "Player takes damage on touch, enemies die if jumped on.",
+  "character_abilities": ["run", "jump"]
+}

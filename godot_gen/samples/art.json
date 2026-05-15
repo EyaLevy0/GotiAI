@@ -1,0 +1,7 @@
+{
+  "base_art_style": "pixel art, 32x32 tiles",
+  "main_character": "fox with red scarf",
+  "enemies": ["slime", "bat"],
+  "world_background": "parallax forest",
+  "tileset_environment": "mossy stone"
+}
